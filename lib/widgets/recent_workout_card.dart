@@ -41,18 +41,6 @@ class RecentWorkoutCard extends StatelessWidget {
   Widget _buildHeader() {
     return Row(
       children: [
-        Container(
-          width: 4,
-          height: 32,
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [CyberTheme.neonCyan, CyberTheme.neonPurple],
-            ),
-            borderRadius: BorderRadius.circular(2),
-          ),
-        ),
         const SizedBox(width: 12),
         Expanded(
           child: Column(

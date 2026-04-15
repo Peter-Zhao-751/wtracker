@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../theme.dart';
 import '../models.dart';
 import '../data.dart';
+import '../exercise_info.dart';
 
 class LogWorkoutScreen extends StatefulWidget {
   final VoidCallback? onSaved;
@@ -17,9 +18,10 @@ class LogWorkoutScreen extends StatefulWidget {
 
 class _LogWorkoutScreenState extends State<LogWorkoutScreen> {
   DateTime _date = DateTime.now();
-  final _titleController = TextEditingController(text: '');
+  final _titleController = TextEditingController();
   final List<_ExerciseForm> _exercises = [];
   late final DateTime _startTime;
+  bool _saving = false;
 
   @override
   void initState() {
@@ -132,7 +134,8 @@ class _LogWorkoutScreenState extends State<LogWorkoutScreen> {
           GestureDetector(
             onTap: _pickDate,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               decoration: BoxDecoration(
                 color: CyberTheme.bgSurface,
                 borderRadius: BorderRadius.circular(12),
@@ -181,26 +184,40 @@ class _LogWorkoutScreenState extends State<LogWorkoutScreen> {
 
   Widget _buildExerciseCard(int exerciseIndex) {
     final ex = _exercises[exerciseIndex];
+    final info = getExerciseInfo(ex.name);
     final prevBest = WorkoutRepository.instance.previousBest(ex.name);
+    final best1RM = WorkoutRepository.instance.bestEstimated1RM(ex.name);
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
       decoration: CyberTheme.cardDecoration(
-        glowColor: CyberTheme.neonCyan,
-        borderOpacity: 0.1,
+        glowColor: info?.color ?? CyberTheme.neonCyan,
+        borderOpacity: 0.12,
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Exercise header
+            // Exercise header with avatar
             Row(
               children: [
+                ExerciseAvatar(exerciseName: ex.name, size: 32),
+                const SizedBox(width: 10),
                 Expanded(
-                  child: Text(
-                    ex.name,
-                    style: CyberTheme.cardTitle,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(ex.name, style: CyberTheme.cardTitle),
+                      if (prevBest != null)
+                        Text(
+                          'Best: ${prevBest.weight.toStringAsFixed(0)} × ${prevBest.reps}  •  E1RM: ${best1RM.toStringAsFixed(0)} lb',
+                          style: GoogleFonts.rajdhani(
+                            fontSize: 11,
+                            color: CyberTheme.neonCyan.withValues(alpha: 0.6),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
                 GestureDetector(
@@ -214,17 +231,6 @@ class _LogWorkoutScreenState extends State<LogWorkoutScreen> {
                 ),
               ],
             ),
-            if (prevBest != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  'Previous best: ${prevBest.weight.toStringAsFixed(0)} × ${prevBest.reps}',
-                  style: GoogleFonts.rajdhani(
-                    fontSize: 12,
-                    color: CyberTheme.neonCyan.withValues(alpha: 0.6),
-                  ),
-                ),
-              ),
             const SizedBox(height: 12),
             // Column headers
             Padding(
@@ -234,19 +240,16 @@ class _LogWorkoutScreenState extends State<LogWorkoutScreen> {
                   SizedBox(
                     width: 32,
                     child: Text('SET',
-                        style:
-                            CyberTheme.statLabel.copyWith(fontSize: 9)),
+                        style: CyberTheme.statLabel.copyWith(fontSize: 9)),
                   ),
                   Expanded(
                     child: Text('WEIGHT (LB)',
-                        style:
-                            CyberTheme.statLabel.copyWith(fontSize: 9)),
+                        style: CyberTheme.statLabel.copyWith(fontSize: 9)),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text('REPS',
-                        style:
-                            CyberTheme.statLabel.copyWith(fontSize: 9)),
+                        style: CyberTheme.statLabel.copyWith(fontSize: 9)),
                   ),
                   const SizedBox(width: 30),
                 ],
@@ -286,8 +289,8 @@ class _LogWorkoutScreenState extends State<LogWorkoutScreen> {
                         }),
                         child: Icon(Icons.remove_circle_outline,
                             size: 16,
-                            color:
-                                CyberTheme.neonMagenta.withValues(alpha: 0.4)),
+                            color: CyberTheme.neonMagenta
+                                .withValues(alpha: 0.4)),
                       ),
                     ),
                   ],
@@ -437,8 +440,6 @@ class _LogWorkoutScreenState extends State<LogWorkoutScreen> {
           decoration: BoxDecoration(
             gradient: CyberTheme.chartGradient,
             borderRadius: BorderRadius.circular(14),
-            boxShadow: [
-            ],
           ),
           alignment: Alignment.center,
           child: Text(
@@ -503,16 +504,12 @@ class _LogWorkoutScreenState extends State<LogWorkoutScreen> {
   }
 
   void _saveWorkout() {
+    if (_saving) return;
+    _saving = true;
+
     if (_exercises.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Add at least one exercise',
-            style: GoogleFonts.rajdhani(color: Colors.white),
-          ),
-          backgroundColor: CyberTheme.neonMagenta.withValues(alpha: 0.8),
-        ),
-      );
+      _saving = false;
+      _showError('Add at least one exercise');
       return;
     }
 
@@ -532,15 +529,8 @@ class _LogWorkoutScreenState extends State<LogWorkoutScreen> {
     }
 
     if (exercises.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Fill in at least one set',
-            style: GoogleFonts.rajdhani(color: Colors.white),
-          ),
-          backgroundColor: CyberTheme.neonMagenta.withValues(alpha: 0.8),
-        ),
-      );
+      _saving = false;
+      _showError('Fill in at least one set');
       return;
     }
 
@@ -557,8 +547,131 @@ class _LogWorkoutScreenState extends State<LogWorkoutScreen> {
       exercises: exercises,
     );
 
-    WorkoutRepository.instance.addWorkout(workout);
+    // Add with PR detection
+    final saved = WorkoutRepository.instance.addWorkout(workout);
+
+    // Show PR celebration if any
+    if (saved.hasPR) {
+      _showPRCelebration(saved);
+    }
+
     widget.onSaved?.call();
+    _cancelWorkout();
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message,
+            style: GoogleFonts.rajdhani(color: Colors.white)),
+        backgroundColor: CyberTheme.neonMagenta.withValues(alpha: 0.8),
+      ),
+    );
+  }
+
+  void _showPRCelebration(Workout workout) {
+    final prExercises = workout.prExercises;
+    final prDetails = <String>[];
+    for (final ex in workout.exercises) {
+      for (final s in ex.sets) {
+        if (s.isPersonalRecord) {
+          prDetails.add(
+              '${ex.exerciseName}: ${s.estimated1RM.toStringAsFixed(0)} lb e1RM');
+        }
+      }
+    }
+
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: CyberTheme.bgCard,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(
+              color: CyberTheme.neonGreen.withValues(alpha: 0.3)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: CyberTheme.neonGreen.withValues(alpha: 0.15),
+                  border: Border.all(
+                      color: CyberTheme.neonGreen.withValues(alpha: 0.4)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: CyberTheme.neonGreen.withValues(alpha: 0.3),
+                      blurRadius: 20,
+                    ),
+                  ],
+                ),
+                child: const Icon(Icons.emoji_events,
+                    color: CyberTheme.neonGreen, size: 28),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'NEW PR${prExercises.length > 1 ? 's' : ''}!',
+                style: GoogleFonts.orbitron(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: CyberTheme.neonGreen,
+                  letterSpacing: 3,
+                ),
+              ),
+              const SizedBox(height: 12),
+              ...prDetails.take(5).map((detail) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    child: Text(
+                      detail,
+                      style: GoogleFonts.rajdhani(
+                        fontSize: 14,
+                        color: CyberTheme.textSecondary,
+                      ),
+                    ),
+                  )),
+              const SizedBox(height: 8),
+              Text(
+                'Based on estimated 1-rep max (Epley)',
+                style: GoogleFonts.rajdhani(
+                  fontSize: 11,
+                  color: CyberTheme.textMuted,
+                ),
+              ),
+              const SizedBox(height: 20),
+              GestureDetector(
+                onTap: () => Navigator.pop(context),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  decoration: BoxDecoration(
+                    color: CyberTheme.neonGreen.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                        color:
+                            CyberTheme.neonGreen.withValues(alpha: 0.3)),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    'NICE',
+                    style: GoogleFonts.orbitron(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: CyberTheme.neonGreen,
+                      letterSpacing: 2,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -587,7 +700,7 @@ class _SetForm {
   }
 }
 
-// ── Exercise picker ──
+// ── Exercise picker with reorderable list ──
 
 class _ExercisePickerSheet extends StatefulWidget {
   final ValueChanged<String> onSelected;
@@ -600,15 +713,99 @@ class _ExercisePickerSheet extends StatefulWidget {
 
 class _ExercisePickerSheetState extends State<_ExercisePickerSheet> {
   String _query = '';
+  final repo = WorkoutRepository.instance;
+  late List<ExerciseInfo> _starredList;
+  late List<ExerciseInfo> _unstarredList;
 
-  List<String> get _filtered {
-    if (_query.isEmpty) return allExercises;
+  @override
+  void initState() {
+    super.initState();
+    final ordered = repo.orderedExercises;
+    _starredList = ordered.where((e) => repo.isStarred(e.name)).toList();
+    _unstarredList = ordered.where((e) => !repo.isStarred(e.name)).toList();
+  }
+
+  List<ExerciseInfo> get _combined => [..._starredList, ..._unstarredList];
+
+  List<ExerciseInfo> get _filtered {
+    if (_query.isEmpty) return _combined;
     final q = _query.toLowerCase();
-    return allExercises.where((e) => e.toLowerCase().contains(q)).toList();
+    return _combined
+        .where((e) =>
+            e.name.toLowerCase().contains(q) ||
+            e.group.name.toLowerCase().contains(q))
+        .toList();
+  }
+
+  void _saveOrder() {
+    repo.reorderExercises(_combined.map((e) => e.name).toList());
+  }
+
+  void _toggleStar(ExerciseInfo info) {
+    setState(() {
+      repo.toggleStar(info.name);
+      if (repo.isStarred(info.name)) {
+        _unstarredList.remove(info);
+        // Insert after the last starred exercise of the same muscle group
+        int insertAt = -1;
+        for (int i = _starredList.length - 1; i >= 0; i--) {
+          if (_starredList[i].group == info.group) {
+            insertAt = i + 1;
+            break;
+          }
+        }
+        if (insertAt == -1) {
+          // No same-group items yet; insert in muscle group order
+          insertAt = _starredList.length;
+          for (int i = 0; i < _starredList.length; i++) {
+            if (_starredList[i].group.index > info.group.index) {
+              insertAt = i;
+              break;
+            }
+          }
+        }
+        _starredList.insert(insertAt, info);
+      } else {
+        _starredList.remove(info);
+        // Insert into unstarred in muscle-group order
+        final groupIdx =
+            _unstarredList.indexWhere((e) => e.group.index > info.group.index);
+        if (groupIdx == -1) {
+          _unstarredList.add(info);
+        } else {
+          _unstarredList.insert(groupIdx, info);
+        }
+      }
+      _saveOrder();
+    });
+  }
+
+  void _onReorder(int oldIndex, int newIndex) {
+    final sc = _starredList.length;
+    if (newIndex > oldIndex) newIndex--;
+
+    final oldIsStarred = oldIndex < sc;
+    final newIsStarred = newIndex < sc;
+
+    // Don't allow crossing the starred/unstarred boundary
+    if (oldIsStarred != newIsStarred) return;
+
+    setState(() {
+      if (oldIsStarred) {
+        final item = _starredList.removeAt(oldIndex);
+        _starredList.insert(newIndex, item);
+      } else {
+        final item = _unstarredList.removeAt(oldIndex - sc);
+        _unstarredList.insert(newIndex - sc, item);
+      }
+      _saveOrder();
+    });
   }
 
   @override
   Widget build(BuildContext context) {
+    final isSearching = _query.isNotEmpty;
+
     return DraggableScrollableSheet(
       initialChildSize: 0.6,
       maxChildSize: 0.85,
@@ -619,7 +816,6 @@ class _ExercisePickerSheetState extends State<_ExercisePickerSheet> {
           padding: const EdgeInsets.all(16),
           child: Column(
             children: [
-              // Handle
               Container(
                 width: 40,
                 height: 4,
@@ -629,10 +825,7 @@ class _ExercisePickerSheetState extends State<_ExercisePickerSheet> {
                 ),
               ),
               const SizedBox(height: 16),
-              Text(
-                'SELECT EXERCISE',
-                style: CyberTheme.sectionTitle,
-              ),
+              Text('SELECT EXERCISE', style: CyberTheme.sectionTitle),
               const SizedBox(height: 12),
               TextField(
                 autofocus: true,
@@ -651,49 +844,225 @@ class _ExercisePickerSheetState extends State<_ExercisePickerSheet> {
               ),
               const SizedBox(height: 12),
               Expanded(
-                child: ListView.builder(
-                  controller: scrollController,
-                  itemCount: _filtered.length,
-                  itemBuilder: (context, i) {
-                    final name = _filtered[i];
-                    final isKey = keyLifts.contains(name);
-                    return ListTile(
-                      onTap: () => widget.onSelected(name),
-                      dense: true,
-                      leading: Icon(
-                        isKey
-                            ? Icons.star_outline
-                            : Icons.fitness_center_outlined,
-                        size: 18,
-                        color: isKey
-                            ? CyberTheme.neonCyan
-                            : CyberTheme.textMuted,
-                      ),
-                      title: Text(
-                        name,
-                        style: GoogleFonts.rajdhani(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                          color: CyberTheme.textPrimary,
-                        ),
-                      ),
-                      trailing: isKey
-                          ? Text(
-                              'KEY',
-                              style: CyberTheme.chipText.copyWith(
-                                color: CyberTheme.neonCyan.withValues(alpha: 0.5),
-                                fontSize: 8,
-                              ),
-                            )
-                          : null,
-                    );
-                  },
-                ),
+                child: isSearching
+                    ? _buildSearchResults(scrollController)
+                    : _buildReorderableList(scrollController),
               ),
             ],
           ),
         );
       },
+    );
+  }
+
+  Widget _buildSearchResults(ScrollController controller) {
+    final results = _filtered;
+    return ListView.builder(
+      controller: controller,
+      itemCount: results.length,
+      itemBuilder: (context, i) {
+        final info = results[i];
+        return _buildTile(info, i, reorderable: false);
+      },
+    );
+  }
+
+  Widget _buildReorderableList(ScrollController controller) {
+    final combined = _combined;
+    final sc = _starredList.length;
+
+    return ReorderableListView.builder(
+      scrollController: controller,
+      buildDefaultDragHandles: false,
+      itemCount: combined.length,
+      onReorder: _onReorder,
+      proxyDecorator: _proxyDecorator,
+      itemBuilder: (context, i) {
+        final info = combined[i];
+        final isStarredSection = i < sc;
+
+        // Section headers
+        Widget? sectionHeader;
+        if (i == 0 && sc > 0) {
+          sectionHeader = _sectionLabel('STARRED', CyberTheme.neonYellow);
+        } else if (i == sc) {
+          sectionHeader = _sectionLabel('ALL EXERCISES', CyberTheme.textMuted);
+        }
+
+        // Group header for unstarred items
+        Widget? groupHeader;
+        if (!isStarredSection) {
+          final isFirstInSection = i == sc;
+          final prevDiffGroup =
+              !isFirstInSection && combined[i - 1].group != info.group;
+          // Also show group header if previous item was in starred section
+          if (isFirstInSection || prevDiffGroup) {
+            groupHeader = Padding(
+              padding: const EdgeInsets.only(top: 6, bottom: 2),
+              child: Row(
+                children: [
+                  Text(
+                    info.group.name.toUpperCase(),
+                    style: GoogleFonts.orbitron(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w600,
+                      color: info.color.withValues(alpha: 0.6),
+                      letterSpacing: 1.5,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Container(
+                      height: 1,
+                      color: info.color.withValues(alpha: 0.15),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
+        }
+
+        return Column(
+          key: ValueKey(info.name),
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ?sectionHeader,
+            ?groupHeader,
+            _buildTile(info, i, reorderable: true),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _sectionLabel(String text, Color color) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 6),
+      child: Row(
+        children: [
+          Container(
+            width: 3,
+            height: 12,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.6),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            text,
+            style: GoogleFonts.orbitron(
+              fontSize: 9,
+              fontWeight: FontWeight.w700,
+              color: color.withValues(alpha: 0.7),
+              letterSpacing: 2,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Container(
+              height: 1,
+              color: color.withValues(alpha: 0.15),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _proxyDecorator(
+      Widget child, int index, Animation<double> animation) {
+    return Material(
+      color: CyberTheme.bgCardLight,
+      borderRadius: BorderRadius.circular(12),
+      elevation: 0,
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: CyberTheme.neonCyan.withValues(alpha: 0.3),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: CyberTheme.neonCyan.withValues(alpha: 0.15),
+              blurRadius: 12,
+            ),
+          ],
+        ),
+        child: child,
+      ),
+    );
+  }
+
+  Widget _buildTile(ExerciseInfo info, int index,
+      {required bool reorderable}) {
+    final isStarred = repo.isStarred(info.name);
+    return GestureDetector(
+      onTap: () => widget.onSelected(info.name),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 5),
+        child: Row(
+          children: [
+            // Star (left side)
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => _toggleStar(info),
+              child: Padding(
+                padding: const EdgeInsets.all(6),
+                child: Icon(
+                  isStarred ? Icons.star_rounded : Icons.star_border_rounded,
+                  size: 22,
+                  color: isStarred
+                      ? CyberTheme.neonYellow
+                      : CyberTheme.textMuted.withValues(alpha: 0.3),
+                ),
+              ),
+            ),
+            const SizedBox(width: 4),
+            // Avatar
+            ExerciseAvatar(exerciseName: info.name, size: 34),
+            const SizedBox(width: 10),
+            // Name + group
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    info.name,
+                    style: GoogleFonts.rajdhani(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: CyberTheme.textPrimary,
+                    ),
+                  ),
+                  Text(
+                    info.group.name.toUpperCase(),
+                    style: CyberTheme.chipText.copyWith(
+                      color: info.color.withValues(alpha: 0.5),
+                      fontSize: 8,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Drag handle (right side, only in reorderable mode)
+            if (reorderable)
+              ReorderableDragStartListener(
+                index: index,
+                child: Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Icon(
+                    Icons.drag_handle_rounded,
+                    size: 20,
+                    color: CyberTheme.textMuted.withValues(alpha: 0.4),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }

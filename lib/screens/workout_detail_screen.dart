@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import '../theme.dart';
 import '../models.dart';
+import '../exercise_info.dart';
 import '../widgets/cyber_card.dart';
 
 class WorkoutDetailScreen extends StatelessWidget {
@@ -70,7 +71,8 @@ class WorkoutDetailScreen extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-      decoration: CyberTheme.cardDecoration(glowColor: CyberTheme.neonPurple),
+      decoration:
+          CyberTheme.cardDecoration(glowColor: CyberTheme.neonPurple),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
@@ -112,18 +114,24 @@ class WorkoutDetailScreen extends StatelessWidget {
   }
 
   Widget _buildExerciseSection(ExerciseEntry entry) {
+    final info = getExerciseInfo(entry.exerciseName);
+    final accentColor = entry.hasPR
+        ? CyberTheme.neonGreen
+        : (info?.color ?? CyberTheme.neonCyan);
+
     return CyberCard(
-      glowColor: entry.sets.any((s) => s.isPersonalRecord)
-          ? CyberTheme.neonGreen
-          : CyberTheme.neonCyan,
+      glowColor: accentColor,
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Text(entry.exerciseName, style: CyberTheme.cardTitle),
-              const Spacer(),
+              ExerciseAvatar(exerciseName: entry.exerciseName, size: 30),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(entry.exerciseName, style: CyberTheme.cardTitle),
+              ),
               Text(
                 _formatVol(entry.totalVolume),
                 style: GoogleFonts.orbitron(
@@ -139,8 +147,8 @@ class WorkoutDetailScreen extends StatelessWidget {
             children: [
               SizedBox(
                 width: 36,
-                child:
-                    Text('SET', style: CyberTheme.statLabel.copyWith(fontSize: 9)),
+                child: Text('SET',
+                    style: CyberTheme.statLabel.copyWith(fontSize: 9)),
               ),
               Expanded(
                 child: Text('WEIGHT',
@@ -152,7 +160,7 @@ class WorkoutDetailScreen extends StatelessWidget {
               ),
               SizedBox(
                 width: 50,
-                child: Text('1RM',
+                child: Text('E1RM',
                     style: CyberTheme.statLabel.copyWith(fontSize: 9),
                     textAlign: TextAlign.right),
               ),
@@ -211,7 +219,9 @@ class WorkoutDetailScreen extends StatelessWidget {
                       s.estimated1RM.toStringAsFixed(0),
                       style: GoogleFonts.orbitron(
                         fontSize: 11,
-                        color: CyberTheme.textMuted,
+                        color: s.isPersonalRecord
+                            ? CyberTheme.neonGreen
+                            : CyberTheme.textMuted,
                       ),
                       textAlign: TextAlign.right,
                     ),
@@ -222,8 +232,16 @@ class WorkoutDetailScreen extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 5, vertical: 2),
                       decoration: BoxDecoration(
-                        color: CyberTheme.neonGreen.withValues(alpha: 0.15),
+                        color:
+                            CyberTheme.neonGreen.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(4),
+                        boxShadow: [
+                          BoxShadow(
+                            color: CyberTheme.neonGreen
+                                .withValues(alpha: 0.2),
+                            blurRadius: 6,
+                          ),
+                        ],
                       ),
                       child: Text(
                         'PR',

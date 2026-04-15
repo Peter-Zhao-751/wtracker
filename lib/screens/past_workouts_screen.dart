@@ -15,12 +15,13 @@ class PastWorkoutsScreen extends StatefulWidget {
 }
 
 class _PastWorkoutsScreenState extends State<PastWorkoutsScreen> {
-  int _filterIndex = 0; // 0=All, 1=This month, 2+=by movement
+  int _filterIndex = 0; // 0=All, 1=This month, 2+=by starred exercise
   static const _baseFilters = ['ALL', 'THIS MONTH'];
 
   List<String> get _filters => [
         ..._baseFilters,
-        ...keyLifts.map((e) => e.toUpperCase()),
+        ...WorkoutRepository.instance.starredExerciseNames
+            .map((e) => e.toUpperCase()),
       ];
 
   List<Workout> get _filteredWorkouts {
@@ -31,13 +32,14 @@ class _PastWorkoutsScreenState extends State<PastWorkoutsScreen> {
       case 1:
         final now = DateTime.now();
         return all
-            .where((w) =>
-                w.date.year == now.year && w.date.month == now.month)
+            .where(
+                (w) => w.date.year == now.year && w.date.month == now.month)
             .toList();
       default:
+        final starred = WorkoutRepository.instance.starredExerciseNames;
         final liftIdx = _filterIndex - _baseFilters.length;
-        if (liftIdx >= 0 && liftIdx < keyLifts.length) {
-          final lift = keyLifts[liftIdx];
+        if (liftIdx >= 0 && liftIdx < starred.length) {
+          final lift = starred[liftIdx];
           return all
               .where(
                   (w) => w.exercises.any((e) => e.exerciseName == lift))
@@ -59,9 +61,21 @@ class _PastWorkoutsScreenState extends State<PastWorkoutsScreen> {
         if (workouts.isEmpty)
           SliverFillRemaining(
             child: Center(
-              child: Text(
-                'No workouts found',
-                style: CyberTheme.cardBody,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.history,
+                      size: 48,
+                      color: CyberTheme.textMuted.withValues(alpha: 0.3)),
+                  const SizedBox(height: 16),
+                  Text(
+                    'No workouts found',
+                    style: GoogleFonts.orbitron(
+                      fontSize: 13,
+                      color: CyberTheme.textMuted,
+                    ),
+                  ),
+                ],
               ),
             ),
           )
@@ -109,7 +123,8 @@ class _PastWorkoutsScreenState extends State<PastWorkoutsScreen> {
             onTap: () => setState(() => _filterIndex = i),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 200),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
                 color: isActive
                     ? CyberTheme.neonCyan.withValues(alpha: 0.15)
@@ -124,7 +139,8 @@ class _PastWorkoutsScreenState extends State<PastWorkoutsScreen> {
               child: Text(
                 _filters[i],
                 style: CyberTheme.chipText.copyWith(
-                  color: isActive ? CyberTheme.neonCyan : CyberTheme.textMuted,
+                  color:
+                      isActive ? CyberTheme.neonCyan : CyberTheme.textMuted,
                   fontSize: 9,
                 ),
               ),
@@ -198,7 +214,8 @@ class _PastWorkoutsScreenState extends State<PastWorkoutsScreen> {
           // PR badge or chevron
           if (workout.hasPR)
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
                 color: CyberTheme.neonGreen.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(6),
@@ -217,7 +234,8 @@ class _PastWorkoutsScreenState extends State<PastWorkoutsScreen> {
             )
           else
             Icon(Icons.chevron_right,
-                size: 20, color: CyberTheme.textMuted.withValues(alpha: 0.4)),
+                size: 20,
+                color: CyberTheme.textMuted.withValues(alpha: 0.4)),
         ],
       ),
     );

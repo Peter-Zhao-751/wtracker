@@ -2,18 +2,21 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'theme.dart';
+import 'data.dart';
 import 'screens/home_screen.dart';
 import 'screens/log_workout_screen.dart';
 import 'screens/past_workouts_screen.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  GoogleFonts.config.allowRuntimeFetching = false;
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.light,
     systemNavigationBarColor: CyberTheme.bgDark,
     systemNavigationBarIconBrightness: Brightness.light,
   ));
+  await WorkoutRepository.instance.init();
   runApp(const WTrackerApp());
 }
 
@@ -160,9 +163,7 @@ class _AppShellState extends State<AppShell> {
               height: 3,
               margin: const EdgeInsets.only(bottom: 8),
               decoration: BoxDecoration(
-                color: isActive
-                    ? CyberTheme.neonCyan
-                    : Colors.transparent,
+                color: isActive ? CyberTheme.neonCyan : Colors.transparent,
                 borderRadius: BorderRadius.circular(2),
                 boxShadow: isActive
                     ? [
