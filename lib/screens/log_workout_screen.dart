@@ -457,9 +457,6 @@ class _LogWorkoutScreenState extends State<LogWorkoutScreen> {
   }
 
   void _cancelWorkout() {
-    for (final ex in _exercises) {
-      ex.dispose();
-    }
     Navigator.pop(context);
   }
 
@@ -492,7 +489,7 @@ class _LogWorkoutScreenState extends State<LogWorkoutScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       isScrollControlled: true,
-      builder: (context) => _ExercisePickerSheet(
+      builder: (context) => ExercisePickerSheet(
         onSelected: (name) {
           Navigator.pop(context);
           setState(() {
@@ -556,7 +553,6 @@ class _LogWorkoutScreenState extends State<LogWorkoutScreen> {
     }
 
     widget.onSaved?.call();
-    _cancelWorkout();
   }
 
   void _showError(String message) {
@@ -702,16 +698,16 @@ class _SetForm {
 
 // ── Exercise picker with reorderable list ──
 
-class _ExercisePickerSheet extends StatefulWidget {
+class ExercisePickerSheet extends StatefulWidget {
   final ValueChanged<String> onSelected;
 
-  const _ExercisePickerSheet({required this.onSelected});
+  const ExercisePickerSheet({super.key, required this.onSelected});
 
   @override
-  State<_ExercisePickerSheet> createState() => _ExercisePickerSheetState();
+  State<ExercisePickerSheet> createState() => _ExercisePickerSheetState();
 }
 
-class _ExercisePickerSheetState extends State<_ExercisePickerSheet> {
+class _ExercisePickerSheetState extends State<ExercisePickerSheet> {
   String _query = '';
   final repo = WorkoutRepository.instance;
   late List<ExerciseInfo> _starredList;
@@ -807,8 +803,8 @@ class _ExercisePickerSheetState extends State<_ExercisePickerSheet> {
     final isSearching = _query.isNotEmpty;
 
     return DraggableScrollableSheet(
-      initialChildSize: 0.6,
-      maxChildSize: 0.85,
+      initialChildSize: 0.8,
+      maxChildSize: 0.9,
       minChildSize: 0.4,
       expand: false,
       builder: (context, scrollController) {
@@ -828,7 +824,7 @@ class _ExercisePickerSheetState extends State<_ExercisePickerSheet> {
               Text('SELECT EXERCISE', style: CyberTheme.sectionTitle),
               const SizedBox(height: 12),
               TextField(
-                autofocus: true,
+                autofocus: false,
                 onChanged: (v) => setState(() => _query = v),
                 style: GoogleFonts.rajdhani(
                   fontSize: 15,

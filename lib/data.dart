@@ -39,6 +39,22 @@ class WorkoutRepository {
     return withPRs;
   }
 
+  /// Updates an existing workout by ID, re-running PR detection.
+  Workout updateWorkout(Workout workout) {
+    final idx = _workouts.indexWhere((w) => w.id == workout.id);
+    if (idx == -1) return addWorkout(workout);
+    _workouts.removeAt(idx);
+    final withPRs = _detectPRs(workout);
+    _workouts.insert(idx, withPRs);
+    StorageService.saveWorkouts(_workouts);
+    return withPRs;
+  }
+
+  void deleteWorkout(String id) {
+    _workouts.removeWhere((w) => w.id == id);
+    StorageService.saveWorkouts(_workouts);
+  }
+
   // ── Starred exercises ──
 
   List<String> get starredExerciseNames {
