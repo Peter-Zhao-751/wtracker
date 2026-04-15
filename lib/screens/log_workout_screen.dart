@@ -547,12 +547,12 @@ class _LogWorkoutScreenState extends State<LogWorkoutScreen> {
     // Add with PR detection
     final saved = WorkoutRepository.instance.addWorkout(workout);
 
-    // Show PR celebration if any
+    // Show PR celebration if any, then pop via onSaved
     if (saved.hasPR) {
       _showPRCelebration(saved);
+    } else {
+      widget.onSaved?.call();
     }
-
-    widget.onSaved?.call();
   }
 
   void _showError(String message) {
@@ -579,6 +579,7 @@ class _LogWorkoutScreenState extends State<LogWorkoutScreen> {
 
     showDialog(
       context: context,
+      barrierDismissible: false,
       builder: (context) => Dialog(
         backgroundColor: CyberTheme.bgCard,
         shape: RoundedRectangleBorder(
@@ -640,7 +641,10 @@ class _LogWorkoutScreenState extends State<LogWorkoutScreen> {
               ),
               const SizedBox(height: 20),
               GestureDetector(
-                onTap: () => Navigator.pop(context),
+                onTap: () {
+                  Navigator.pop(context); // close dialog
+                  widget.onSaved?.call();
+                },
                 child: Container(
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(vertical: 12),

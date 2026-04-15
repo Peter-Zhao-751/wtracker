@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -8,11 +10,49 @@ import '../models.dart';
 
 // ── Page 0: Radar overview ──
 
-class MuscleRadarPage extends StatelessWidget {
+class MuscleRadarPage extends StatefulWidget {
   const MuscleRadarPage({super.key});
 
+  @override
+  State<MuscleRadarPage> createState() => _MuscleRadarPageState();
+}
+
+class _MuscleRadarPageState extends State<MuscleRadarPage>
+    with SingleTickerProviderStateMixin {
   static const _groups = MuscleGroup.values;
   static const _groupLabels = ['CHEST', 'BACK', 'LEGS', 'SHLDR', 'ARMS'];
+
+  bool _expanded = false;
+  late AnimationController _animController;
+  late Animation<double> _expandAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _animController = AnimationController(
+      duration: const Duration(milliseconds: 400),
+      vsync: this,
+    );
+    _expandAnim = CurvedAnimation(
+      parent: _animController,
+      curve: Curves.easeInOut,
+    );
+  }
+
+  @override
+  void dispose() {
+    _animController.dispose();
+    super.dispose();
+  }
+
+  void _toggleExpanded() {
+    setState(() => _expanded = !_expanded);
+    if (_expanded) {
+      _animController.forward();
+    } else {
+      _animController.reverse();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -25,10 +65,11 @@ class MuscleRadarPage extends StatelessWidget {
       groupScores.add(muscleGroupScore(g, best));
     }
 
-    // Overall = average of groups with data
-    final nonZero = groupScores.where((s) => s > 0);
-    final overall =
-        nonZero.isEmpty ? 0.0 : nonZero.reduce((a, b) => a + b) / nonZero.length;
+    // Overall = geometric average of groups with data
+    final nonZero = groupScores.where((s) => s > 0).toList();
+    final overall = nonZero.isEmpty
+        ? 0.0
+        : math.exp(nonZero.map(math.log).reduce((a, b) => a + b) / nonZero.length);
     final overallColor = ratingColor(overall);
     final overallLevel = ratingLabel(overall);
     final next = _nextMilestone(overall);
@@ -161,56 +202,31 @@ class MuscleRadarPage extends StatelessWidget {
   }
 
   Widget _buildRadar(List<double> scores, double goalThreshold) {
-    return RadarChart(
-      RadarChartData(
-        radarShape: RadarShape.polygon,
-        dataSets: [
-          // Goal ring — milestone target
-          RadarDataSet(
-            dataEntries: List.generate(
-              _groups.length,
-              (_) => RadarEntry(value: goalThreshold),
+    final dataMax = [
+      ...scores,
+      goalThreshold,
+    ].reduce(math.max);
+    final fittedMax = (dataMax * 1.15).clamp(10.0, 100.0);
+
+    return GestureDetector(
+      onTap: _toggleExpanded,
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedBuilder(
+        animation: _expandAnim,
+        builder: (context, child) {
+          final maxValue =
+              fittedMax + (100.0 - fittedMax) * _expandAnim.value;
+          return CustomPaint(
+            painter: _SpiderWebRadarPainter(
+              scores: scores,
+              maxValue: maxValue,
+              goalThreshold: goalThreshold,
+              rankThresholds: const [35, 55, 75, 88, 100],
+              groupLabels: _groupLabels,
             ),
-            fillColor: Colors.transparent,
-            borderColor: CyberTheme.textSecondary.withValues(alpha: 0.35),
-            borderWidth: 1.5,
-            entryRadius: 0,
-          ),
-          // Actual scores
-          RadarDataSet(
-            dataEntries: scores.map((s) => RadarEntry(value: s)).toList(),
-            fillColor: CyberTheme.neonCyan.withValues(alpha: 0.12),
-            borderColor: CyberTheme.neonCyan.withValues(alpha: 0.7),
-            borderWidth: 2,
-            entryRadius: 3,
-          ),
-        ],
-        radarBorderData: BorderSide(
-          color: CyberTheme.textMuted.withValues(alpha: 0.15),
-          width: 1,
-        ),
-        gridBorderData: BorderSide(
-          color: CyberTheme.textMuted.withValues(alpha: 0.08),
-          width: 0.5,
-        ),
-        tickBorderData: BorderSide(
-          color: CyberTheme.textMuted.withValues(alpha: 0.08),
-          width: 0.5,
-        ),
-        tickCount: 4,
-        ticksTextStyle: const TextStyle(fontSize: 0, color: Colors.transparent),
-        titleTextStyle: GoogleFonts.orbitron(
-          fontSize: 9,
-          fontWeight: FontWeight.w600,
-          color: CyberTheme.textSecondary,
-          letterSpacing: 1,
-        ),
-        titlePositionPercentageOffset: 0.22,
-        getTitle: (index, angle) {
-          return RadarChartTitle(text: _groupLabels[index]);
+            size: Size.infinite,
+          );
         },
-        radarBackgroundColor: Colors.transparent,
-        borderData: FlBorderData(show: false),
       ),
     );
   }
@@ -647,6 +663,171 @@ String _shortName(String name) {
       .replaceAll('Romanian ', 'Rom ')
       .replaceAll('Dumbbell ', 'DB ')
       .replaceAll('Tricep ', 'Tri ');
+}
+
+class _SpiderWebRadarPainter extends CustomPainter {
+  final List<double> scores;
+  final double maxValue;
+  final double goalThreshold;
+  final List<double> rankThresholds;
+  final List<String> groupLabels;
+
+  _SpiderWebRadarPainter({
+    required this.scores,
+    required this.maxValue,
+    required this.goalThreshold,
+    required this.rankThresholds,
+    required this.groupLabels,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = math.min(size.width, size.height) / 2 * 0.78;
+    final sides = scores.length;
+    final angleStep = 2 * math.pi / sides;
+    const startAngle = -math.pi / 2;
+
+    final gridPaint = Paint()
+      ..color = CyberTheme.textMuted.withValues(alpha: 0.35)
+      ..strokeWidth = 0.5
+      ..style = PaintingStyle.stroke;
+
+    final goalGridPaint = Paint()
+      ..color = CyberTheme.textSecondary.withValues(alpha: 0.35)
+      ..strokeWidth = 1.5
+      ..style = PaintingStyle.stroke;
+
+    // Concentric pentagons at rank thresholds (35, 55, 75, 88, 100)
+    for (final threshold in rankThresholds) {
+      if (threshold > maxValue) continue;
+      final r = (threshold / maxValue) * radius;
+      canvas.drawPath(
+        _polygonPath(center, r, sides, startAngle, angleStep),
+        threshold == goalThreshold ? goalGridPaint : gridPaint,
+      );
+    }
+
+    // Radial spokes from center
+    for (int i = 0; i < sides; i++) {
+      final angle = startAngle + angleStep * i;
+      final end = Offset(
+        center.dx + radius * math.cos(angle),
+        center.dy + radius * math.sin(angle),
+      );
+      canvas.drawLine(center, end, gridPaint);
+    }
+
+    // Data polygon
+    final dataPath = Path();
+    final dataPoints = <Offset>[];
+    for (int i = 0; i <= sides; i++) {
+      final idx = i % sides;
+      final angle = startAngle + angleStep * idx;
+      final r = (scores[idx] / maxValue).clamp(0.0, 1.0) * radius;
+      final point = Offset(
+        center.dx + r * math.cos(angle),
+        center.dy + r * math.sin(angle),
+      );
+      if (i < sides) dataPoints.add(point);
+      if (i == 0) {
+        dataPath.moveTo(point.dx, point.dy);
+      } else {
+        dataPath.lineTo(point.dx, point.dy);
+      }
+    }
+
+    // Fill
+    canvas.drawPath(
+      dataPath,
+      Paint()
+        ..color = CyberTheme.neonCyan.withValues(alpha: 0.12)
+        ..style = PaintingStyle.fill,
+    );
+    // Glow
+    canvas.drawPath(
+      dataPath,
+      Paint()
+        ..color = CyberTheme.neonCyan.withValues(alpha: 0.06)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 6
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+    );
+    // Border
+    canvas.drawPath(
+      dataPath,
+      Paint()
+        ..color = CyberTheme.neonCyan.withValues(alpha: 0.7)
+        ..strokeWidth = 2
+        ..style = PaintingStyle.stroke,
+    );
+
+    // Data dots
+    final dotPaint = Paint()
+      ..color = CyberTheme.neonCyan
+      ..style = PaintingStyle.fill;
+    for (final point in dataPoints) {
+      canvas.drawCircle(point, 3, dotPaint);
+    }
+
+    // Axis labels
+    for (int i = 0; i < sides; i++) {
+      final angle = startAngle + angleStep * i;
+      final labelR = radius + 16;
+      final labelPos = Offset(
+        center.dx + labelR * math.cos(angle),
+        center.dy + labelR * math.sin(angle),
+      );
+      final tp = TextPainter(
+        text: TextSpan(
+          text: groupLabels[i],
+          style: GoogleFonts.orbitron(
+            fontSize: 9,
+            fontWeight: FontWeight.w600,
+            color: CyberTheme.textSecondary,
+            letterSpacing: 1,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      tp.paint(
+        canvas,
+        Offset(labelPos.dx - tp.width / 2, labelPos.dy - tp.height / 2),
+      );
+    }
+  }
+
+  Path _polygonPath(Offset center, double r, int sides, double startAngle,
+      double angleStep) {
+    final path = Path();
+    for (int i = 0; i <= sides; i++) {
+      final angle = startAngle + angleStep * (i % sides);
+      final point = Offset(
+        center.dx + r * math.cos(angle),
+        center.dy + r * math.sin(angle),
+      );
+      if (i == 0) {
+        path.moveTo(point.dx, point.dy);
+      } else {
+        path.lineTo(point.dx, point.dy);
+      }
+    }
+    return path;
+  }
+
+  @override
+  bool shouldRepaint(_SpiderWebRadarPainter old) =>
+      old.maxValue != maxValue ||
+      old.goalThreshold != goalThreshold ||
+      !_listEquals(old.scores, scores);
+
+  bool _listEquals(List<double> a, List<double> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
 }
 
 class _GridBgPainter extends CustomPainter {

@@ -163,19 +163,19 @@ double liftScore(double e1rm, double eliteStandard) {
   return 100 * (1 - math.exp(-2.0 * ratio));
 }
 
-/// Score for a whole muscle group: average of all logged exercises in that group.
+/// Score for a whole muscle group: strongest movement in that group.
 double muscleGroupScore(
     MuscleGroup group, Map<String, double> best1RMs) {
   final exercises = exerciseDatabase.where((e) => e.group == group);
-  final scores = <double>[];
+  double best = 0;
   for (final ex in exercises) {
     final e1rm = best1RMs[ex.name];
     if (e1rm != null && e1rm > 0) {
-      scores.add(liftScore(e1rm, eliteStandards[ex.name] ?? 200));
+      final s = liftScore(e1rm, eliteStandards[ex.name] ?? 200);
+      if (s > best) best = s;
     }
   }
-  if (scores.isEmpty) return 0;
-  return scores.reduce((a, b) => a + b) / scores.length;
+  return best;
 }
 
 String ratingLabel(double score) {
