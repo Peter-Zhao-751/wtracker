@@ -1,243 +1,381 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'history.dart';
+import 'models.dart';
+import 'state.dart';
+import 'storage.dart';
 import 'theme.dart';
-import 'data.dart';
-import 'screens/home_screen.dart';
-import 'screens/log_workout_screen.dart';
-import 'screens/past_workouts_screen.dart';
+import 'widgets/primitives.dart';
+import 'screens/dashboard.dart';
+import 'screens/templates.dart';
+import 'screens/progression.dart';
+import 'screens/log_sheet.dart';
+import 'screens/tweaks_panel.dart';
+import 'screens/active_workout.dart';
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  GoogleFonts.config.allowRuntimeFetching = false;
-  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-    statusBarColor: Colors.transparent,
-    statusBarIconBrightness: Brightness.light,
-    systemNavigationBarColor: CyberTheme.bgDark,
-    systemNavigationBarIconBrightness: Brightness.light,
+  GoogleFonts.config.allowRuntimeFetching = true;
+  final tweaks = Tweaks();
+  final prefs = Prefs();
+  final history = History();
+  final wordmarks = <String, String>{};
+  await Future.wait([
+    tweaks.load(),
+    prefs.load(),
+    history.load(),
+    () async {
+      for (final a in kAccents) {
+        final name = a.name.toLowerCase();
+        wordmarks[name] =
+            await rootBundle.loadString('assets/wordmark-$name.svg');
+      }
+    }(),
+  ]);
+  final savedTab = await Storage.loadTab();
+  runApp(WTrackerApp(
+    tweaks: tweaks,
+    prefs: prefs,
+    history: history,
+    wordmarks: wordmarks,
+    initialTab: savedTab ?? 'dash',
   ));
-  await WorkoutRepository.instance.init();
-  runApp(const WTrackerApp());
+}
+
+/// Substitutes the wordmark SVG's hardcoded ink (`#0a0a0a`) and paper
+/// (`#F3F0E8`) with the live theme colors. The accent color inside the SVG
+/// is left alone — each accent has its own file.
+String _themedWordmark(String raw, BrutalPalette p) {
+  String hex(Color c) {
+    final r = (c.r * 255).round() & 0xff;
+    final g = (c.g * 255).round() & 0xff;
+    final b = (c.b * 255).round() & 0xff;
+    return '#${r.toRadixString(16).padLeft(2, '0')}'
+        '${g.toRadixString(16).padLeft(2, '0')}'
+        '${b.toRadixString(16).padLeft(2, '0')}';
+  }
+
+  return raw
+      .replaceAll(RegExp(r'#0a0a0a', caseSensitive: false), hex(p.ink))
+      .replaceAll(RegExp(r'#F3F0E8', caseSensitive: false), hex(p.paper));
 }
 
 class WTrackerApp extends StatelessWidget {
-  const WTrackerApp({super.key});
+  final Tweaks tweaks;
+  final Prefs prefs;
+  final History history;
+  final Map<String, String> wordmarks;
+  final String initialTab;
+  const WTrackerApp({
+    super.key,
+    required this.tweaks,
+    required this.prefs,
+    required this.history,
+    required this.wordmarks,
+    required this.initialTab,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'WTracker',
-      debugShowCheckedModeBanner: false,
-      theme: CyberTheme.darkTheme,
-      home: const AppShell(),
+    return ListenableBuilder(
+      listenable: tweaks,
+      builder: (context, _) {
+        final palette = BrutalPalette.fromTweaks(dark: tweaks.isDark, accent: tweaks.accent);
+        final overlayStyle = SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          // Android: controls icon color directly.
+          statusBarIconBrightness:
+              tweaks.isDark ? Brightness.light : Brightness.dark,
+          // iOS: specifies the background brightness so the system picks
+          // contrasting foreground icons. Dark bg → light (white) icons.
+          statusBarBrightness:
+              tweaks.isDark ? Brightness.dark : Brightness.light,
+          systemNavigationBarColor: palette.paper,
+          systemNavigationBarIconBrightness:
+              tweaks.isDark ? Brightness.light : Brightness.dark,
+        );
+        return MaterialApp(
+          title: 'wTracker',
+          debugShowCheckedModeBanner: false,
+          theme: ThemeData(
+            scaffoldBackgroundColor: palette.paper,
+            textSelectionTheme: TextSelectionThemeData(
+              cursorColor: palette.ink,
+              selectionColor: palette.accent.withValues(alpha: 0.4),
+              selectionHandleColor: palette.ink,
+            ),
+            textTheme: TextTheme(
+              bodyMedium: mono(size: 13, weight: FontWeight.w700, color: palette.ink),
+            ),
+          ),
+          home: AnnotatedRegion<SystemUiOverlayStyle>(
+            value: overlayStyle,
+            child: BrutalColors(
+              palette: palette,
+              child: DefaultTextStyle(
+                style: mono(size: 13, weight: FontWeight.w700, color: palette.ink),
+                child: Container(
+                  color: palette.paper,
+                  child: AppShell(
+                    tweaks: tweaks,
+                    prefs: prefs,
+                    history: history,
+                    wordmarks: wordmarks,
+                    initialTab: initialTab,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
 
 class AppShell extends StatefulWidget {
-  const AppShell({super.key});
+  final Tweaks tweaks;
+  final Prefs prefs;
+  final History history;
+  final Map<String, String> wordmarks;
+  final String initialTab;
+  const AppShell({
+    super.key,
+    required this.tweaks,
+    required this.prefs,
+    required this.history,
+    required this.wordmarks,
+    required this.initialTab,
+  });
 
   @override
   State<AppShell> createState() => _AppShellState();
 }
 
 class _AppShellState extends State<AppShell> {
-  int _currentTab = 0;
-  int _rebuildKey = 0;
+  late String _tab = widget.initialTab;
+  Template? _activeTemplate;
+  bool _logOpen = false;
+  bool _tweaksOpen = false;
+  String? _toast;
 
-  void _openLogWorkout() {
-    Navigator.of(context).push(
-      PageRouteBuilder(
-        pageBuilder: (context, animation, secondaryAnimation) {
-          return LogWorkoutScreen(
-            onSaved: () {
-              Navigator.of(context).pop();
-              setState(() {
-                _rebuildKey++;
-                _currentTab = 0;
-              });
-            },
-          );
-        },
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          return SlideTransition(
-            position: Tween<Offset>(
-              begin: const Offset(0, 1),
-              end: Offset.zero,
-            ).animate(CurvedAnimation(
-              parent: animation,
-              curve: Curves.easeOutCubic,
-            )),
-            child: child,
-          );
-        },
-        transitionDuration: const Duration(milliseconds: 350),
-      ),
-    );
+  void _setTab(String t) {
+    if (t == 'log') {
+      setState(() => _logOpen = true);
+      return;
+    }
+    setState(() => _tab = t);
+    Storage.saveTab(t);
+  }
+
+  void _start(Template t) {
+    setState(() {
+      _activeTemplate = t;
+      _logOpen = false;
+    });
+  }
+
+  void _finish(ActiveSummary s) {
+    final logged = <LoggedSet>[];
+    for (final ex in s.exs) {
+      for (final set in ex.log) {
+        if (!set.done) continue;
+        logged.add(LoggedSet(
+          exerciseName: ex.name,
+          group: ex.group,
+          w: set.w,
+          reps: set.reps,
+          isPR: set.isPR,
+        ));
+      }
+    }
+    if (logged.isNotEmpty) {
+      widget.history.add(SessionRecord(
+        date: DateTime.now(),
+        name: s.name,
+        split: s.split,
+        durSec: s.dur,
+        sets: logged,
+      ));
+    }
+    setState(() {
+      _activeTemplate = null;
+      final parts = <String>[];
+      if (s.saveAsTpl) {
+        parts.add('SAVED "${s.newName}"');
+      } else if (s.updateTpl) {
+        parts.add('TEMPLATE UPDATED');
+      }
+      final extra = parts.isEmpty ? '' : ' · ${parts.join(' · ')}';
+      _toast = 'SESSION COMPLETE · ${s.dur ~/ 60}m · ${s.sets} sets$extra';
+    });
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted) setState(() => _toast = null);
+    });
+  }
+
+  String _headerSub() {
+    switch (_tab) {
+      case 'tpl':
+        return 'TEMPLATES';
+      case 'prog':
+        return 'PROGRESSION';
+      case 'log':
+        return 'HISTORY';
+      case 'dash':
+      default:
+        return _today();
+    }
+  }
+
+  String _headerTitle() {
+    switch (_tab) {
+      case 'tpl':
+        return 'PLANS';
+      case 'prog':
+        return 'PROG';
+      case 'log':
+        return 'LOG';
+      case 'dash':
+      default:
+        return 'wTRACKER';
+    }
+  }
+
+  String _today() {
+    final now = DateTime.now();
+    const days = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
+    const months = [
+      'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
+      'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC',
+    ];
+    return '${days[now.weekday - 1]} · ${months[now.month - 1]} ${now.day.toString().padLeft(2, '0')}';
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: CyberTheme.bgDark,
-      body: Stack(
+    final p = BrutalColors.of(context);
+    final inSession = _activeTemplate != null;
+
+    return Material(
+      color: p.paper,
+      child: Stack(
         children: [
-          // Subtle background gradient
-          Positioned.fill(
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: RadialGradient(
-                  center: const Alignment(0, -0.4),
-                  radius: 1.2,
-                  colors: [
-                    CyberTheme.neonCyan.withValues(alpha: 0.03),
-                    CyberTheme.bgDark,
+          if (inSession)
+            Positioned.fill(
+              child: ActiveWorkoutScreen(
+                template: _activeTemplate!,
+                tweaks: widget.tweaks,
+                prefs: widget.prefs,
+                history: widget.history,
+                onFinish: _finish,
+                onClose: () => setState(() => _activeTemplate = null),
+              ),
+            )
+          else
+            Positioned.fill(
+              child: SafeArea(
+                bottom: false,
+                child: Column(
+                  children: [
+                    AppHeaderBar(
+                      title: _headerTitle(),
+                      sub: _headerSub(),
+                      titleWidget: _tab == 'dash'
+                          ? Builder(builder: (ctx) {
+                              final raw = widget.wordmarks[
+                                  widget.tweaks.accent.name.toLowerCase()];
+                              if (raw == null) return const SizedBox.shrink();
+                              return SvgPicture.string(
+                                _themedWordmark(raw, BrutalColors.of(ctx)),
+                                height: 34,
+                              );
+                            })
+                          : null,
+                      right: IconSquare(
+                        icon: Icons.tune,
+                        onTap: () => setState(() => _tweaksOpen = true),
+                      ),
+                    ),
+                    Expanded(
+                      child: _buildTab(),
+                    ),
+                    BottomTabBar(active: _tab, onTab: _setTab),
                   ],
                 ),
               ),
             ),
-          ),
-          // Content
-          IndexedStack(
-            key: ValueKey(_rebuildKey),
-            index: _currentTab,
-            children: [
-              HomeScreen(onNavigateToLog: _openLogWorkout),
-              const PastWorkoutsScreen(),
-            ],
-          ),
+          if (_logOpen && !inSession)
+            Positioned.fill(
+              child: LogSheet(
+                tweaks: widget.tweaks,
+                prefs: widget.prefs,
+                onClose: () => setState(() => _logOpen = false),
+                onStart: _start,
+                onFinishQuick: _finish,
+              ),
+            ),
+          if (_tweaksOpen)
+            Positioned.fill(
+              child: TweaksPanel(
+                tweaks: widget.tweaks,
+                onClose: () => setState(() => _tweaksOpen = false),
+              ),
+            ),
+          if (_toast != null)
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: 90 + MediaQuery.of(context).padding.bottom,
+              child: IgnorePointer(
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                  decoration: BoxDecoration(
+                    color: p.ink,
+                    border: Border.all(color: p.ink, width: 2),
+                    boxShadow: [BoxShadow(color: p.accent, offset: const Offset(3, 3))],
+                  ),
+                  child: Text(
+                    '✓ $_toast',
+                    style: mono(
+                      size: 12,
+                      weight: FontWeight.w800,
+                      letterSpacing: 1,
+                      color: p.paper,
+                    ),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
-      bottomNavigationBar: _buildBottomNav(),
     );
   }
 
-  Widget _buildBottomNav() {
-    return Container(
-      decoration: BoxDecoration(
-        color: CyberTheme.bgCard,
-        border: Border(
-          top: BorderSide(
-            color: CyberTheme.neonCyan.withValues(alpha: 0.1),
-            width: 1,
-          ),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: CyberTheme.bgDark.withValues(alpha: 0.8),
-            blurRadius: 20,
-            offset: const Offset(0, -10),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        top: false,
-        child: SizedBox(
-          height: 64,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              _navItem(Icons.dashboard_outlined, 'HOME', 0),
-              _centerLogButton(),
-              _navItem(Icons.history, 'HISTORY', 1),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _navItem(IconData icon, String label, int tabIndex) {
-    final isActive = _currentTab == tabIndex;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () => setState(() => _currentTab = tabIndex),
-      child: SizedBox(
-        width: 72,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              width: 36,
-              height: 3,
-              margin: const EdgeInsets.only(bottom: 8),
-              decoration: BoxDecoration(
-                color: isActive ? CyberTheme.neonCyan : Colors.transparent,
-                borderRadius: BorderRadius.circular(2),
-                boxShadow: isActive
-                    ? [
-                        BoxShadow(
-                          color: CyberTheme.neonCyan.withValues(alpha: 0.5),
-                          blurRadius: 8,
-                        )
-                      ]
-                    : null,
-              ),
-            ),
-            Icon(
-              icon,
-              size: 22,
-              color: isActive ? CyberTheme.neonCyan : CyberTheme.textMuted,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: GoogleFonts.orbitron(
-                fontSize: 9,
-                fontWeight: FontWeight.w600,
-                color: isActive ? CyberTheme.neonCyan : CyberTheme.textMuted,
-                letterSpacing: 1.5,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _centerLogButton() {
-    return GestureDetector(
-      onTap: _openLogWorkout,
-      child: Container(
-        width: 54,
-        height: 54,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [CyberTheme.neonCyan, CyberTheme.neonMagenta],
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: CyberTheme.neonCyan.withValues(alpha: 0.35),
-              blurRadius: 16,
-              spreadRadius: 1,
-            ),
-            BoxShadow(
-              color: CyberTheme.neonMagenta.withValues(alpha: 0.2),
-              blurRadius: 16,
-              offset: const Offset(4, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.add, color: Colors.white, size: 22),
-            Text(
-              'LOG',
-              style: GoogleFonts.orbitron(
-                fontSize: 7,
-                fontWeight: FontWeight.w700,
-                color: Colors.white,
-                letterSpacing: 1,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+  Widget _buildTab() {
+    switch (_tab) {
+      case 'tpl':
+        return TemplatesScreen(
+          tweaks: widget.tweaks,
+          prefs: widget.prefs,
+          onStart: _start,
+        );
+      case 'prog':
+        return ProgressionScreen(
+          tweaks: widget.tweaks,
+          prefs: widget.prefs,
+          history: widget.history,
+        );
+      case 'dash':
+      default:
+        return DashboardScreen(
+          tweaks: widget.tweaks,
+          history: widget.history,
+          onStart: _start,
+          onTab: _setTab,
+        );
+    }
   }
 }
