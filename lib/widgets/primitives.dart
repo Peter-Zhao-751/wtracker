@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../theme.dart';
+import '../core/theme.dart';
 
 class BrutalColors extends InheritedWidget {
   final BrutalPalette palette;

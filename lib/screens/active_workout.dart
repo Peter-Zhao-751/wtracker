@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../history.dart';
-import '../models.dart';
-import '../state.dart';
-import '../theme.dart';
+import '../core/models.dart';
+import '../core/theme.dart';
+import '../services/history.dart';
+import '../services/state.dart';
 import '../widgets/primitives.dart';
 import 'exercise_picker.dart';
 

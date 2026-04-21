@@ -176,12 +176,14 @@ No email. No cloud. No analytics. No sync server. Everything lives on your devic
 ```
 lib/
 ├── main.dart              ← root app shell + tab switching + overlay style
-├── theme.dart             ← BrutalPalette + the 5 accents + mono() helper
-├── data.dart              ← canonical muscle groups + stock templates
-├── models.dart            ← Template / Exercise / SessionRecord / PrRow
-├── state.dart             ← Tweaks (settings) + Prefs (cross-screen), ChangeNotifiers
-├── storage.dart           ← JSON read/write via path_provider
-├── history.dart           ← session records + PR + group-stat derivation
+├── core/
+│   ├── theme.dart         ← BrutalPalette + the 5 accents + mono() helper
+│   ├── models.dart        ← Template / Exercise / SessionRecord / PrRow
+│   └── data.dart          ← canonical muscle groups + stock templates
+├── services/
+│   ├── state.dart         ← Tweaks (settings) + Prefs (cross-screen), ChangeNotifiers
+│   ├── storage.dart       ← JSON read/write via path_provider
+│   └── history.dart       ← session records + PR + group-stat derivation
 ├── screens/
 │   ├── dashboard.dart     ← hub: radar + recent PRs + detail charts
 │   ├── templates.dart     ← plans: filter bar + reorderable cards
@@ -193,7 +195,7 @@ lib/
 └── widgets/
     ├── drag_list.dart     ← vertical reorder engine
     ├── group_grid.dart    ← horizontal reorder engine
-    ├── muscle_radar.dart  ← custom radar painter
+    ├── radar_chart.dart   ← custom radar painter
     └── primitives.dart    ← AppHeaderBar, IconSquare, DashedLine, Segmented, …
 ```
 

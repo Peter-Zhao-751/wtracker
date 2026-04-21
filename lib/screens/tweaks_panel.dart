@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import '../data.dart';
-import '../state.dart';
-import '../theme.dart';
+import '../core/data.dart';
+import '../core/theme.dart';
+import '../services/state.dart';
 import '../widgets/group_grid.dart';
 import '../widgets/primitives.dart';
 

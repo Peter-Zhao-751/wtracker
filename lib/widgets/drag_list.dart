@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import '../theme.dart';
+import '../core/theme.dart';
 import 'primitives.dart';
 
 /// Wraps a widget to register it as the drag grip for its enclosing item.

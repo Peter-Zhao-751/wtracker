@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
-import 'data.dart';
-import 'models.dart';
+import '../core/data.dart';
+import '../core/models.dart';
 import 'storage.dart';
 
 class History extends ChangeNotifier {

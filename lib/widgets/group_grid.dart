@@ -1,7 +1,7 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../theme.dart';
+import '../core/theme.dart';
 import 'primitives.dart';
 
 /// Grid-shaped cousin of `DragList`: tap-to-select, drag-to-reorder.

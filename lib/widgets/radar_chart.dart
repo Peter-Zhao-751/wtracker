@@ -1,7 +1,7 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
-import '../models.dart';
-import '../theme.dart';
+import '../core/models.dart';
+import '../core/theme.dart';
 
 class RadarChartWidget extends StatelessWidget {
   final List<GroupStat> data;

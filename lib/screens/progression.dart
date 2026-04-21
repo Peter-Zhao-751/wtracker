@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import '../history.dart';
-import '../models.dart';
-import '../state.dart';
-import '../theme.dart';
+import '../core/models.dart';
+import '../core/theme.dart';
+import '../services/history.dart';
+import '../services/state.dart';
 import '../widgets/drag_list.dart';
 import '../widgets/group_grid.dart';
 import '../widgets/primitives.dart';

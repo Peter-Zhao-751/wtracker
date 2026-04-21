@@ -1,9 +1,7 @@
-import 'dart:ui' show PlatformDispatcher, Brightness;
-
 import 'package:flutter/foundation.dart';
-import 'data.dart';
+import '../core/data.dart';
+import '../core/theme.dart';
 import 'storage.dart';
-import 'theme.dart';
 
 class Tweaks extends ChangeNotifier {
   Accent _accent = kAccents.first;

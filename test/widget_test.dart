@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:wtracker/history.dart';
 import 'package:wtracker/main.dart';
-import 'package:wtracker/state.dart';
+import 'package:wtracker/services/history.dart';
+import 'package:wtracker/services/state.dart';
 
 void main() {
   testWidgets('App launches smoke test', (WidgetTester tester) async {

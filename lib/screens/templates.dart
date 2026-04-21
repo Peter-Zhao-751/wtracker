@@ -1,10 +1,10 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../data.dart';
-import '../models.dart';
-import '../state.dart';
-import '../theme.dart';
+import '../core/data.dart';
+import '../core/models.dart';
+import '../core/theme.dart';
+import '../services/state.dart';
 import '../widgets/drag_list.dart';
 import '../widgets/primitives.dart';
 

@@ -2,10 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../history.dart';
-import '../models.dart';
-import '../state.dart';
-import '../theme.dart';
+import '../core/models.dart';
+import '../core/theme.dart';
+import '../services/history.dart';
+import '../services/state.dart';
 import '../widgets/drag_list.dart';
 import '../widgets/primitives.dart';
 import 'active_workout.dart' show ActiveSummary;
@@ -62,7 +62,8 @@ class _QuickSet {
   _QuickSet({required this.w, required this.reps});
 }
 
-class _LogSheetState extends State<LogSheet> {
+class _LogSheetState extends State<LogSheet>
+    with SingleTickerProviderStateMixin {
   final List<_PlannerExercise> _exs = [];
   bool _pickerOpen = false;
   _LogMode _mode = _LogMode.quick;
@@ -70,10 +71,64 @@ class _LogSheetState extends State<LogSheet> {
   int _prIdx = 0;
   Timer? _prTimer;
 
+  // Drag-to-dismiss: follow the finger from the handle, then either fling the
+  // sheet off-screen or spring it back. Past the release threshold (or past
+  // the velocity threshold) we run the same tween controller out to the full
+  // sheet height before calling onClose so the close is animated, not popped.
+  double _dragOffset = 0;
+  double _sheetHeight = 0;
+  late final AnimationController _dismissCtrl;
+  Animation<double>? _dismissAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _dismissCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 220),
+    );
+    _dismissCtrl.addListener(() {
+      final v = _dismissAnim?.value;
+      if (v != null && mounted) setState(() => _dragOffset = v);
+    });
+  }
+
   @override
   void dispose() {
+    _dismissCtrl.dispose();
     _prTimer?.cancel();
     super.dispose();
+  }
+
+  void _onHandleDragStart(DragStartDetails _) {
+    _dismissCtrl.stop();
+  }
+
+  void _onHandleDragUpdate(DragUpdateDetails d) {
+    setState(() {
+      _dragOffset =
+          (_dragOffset + d.delta.dy).clamp(0.0, double.infinity);
+    });
+  }
+
+  void _onHandleDragEnd(DragEndDetails d) {
+    final v = d.primaryVelocity ?? 0;
+    final shouldClose =
+        v > 700 || (_sheetHeight > 0 && _dragOffset > _sheetHeight * 0.18);
+    if (shouldClose && _sheetHeight > 0) {
+      _dismissAnim = Tween<double>(begin: _dragOffset, end: _sheetHeight)
+          .animate(CurvedAnimation(
+              parent: _dismissCtrl, curve: Curves.easeOutCubic));
+      _dismissCtrl.duration = const Duration(milliseconds: 180);
+      _dismissCtrl.forward(from: 0).whenComplete(() {
+        if (mounted) widget.onClose();
+      });
+    } else {
+      _dismissAnim = Tween<double>(begin: _dragOffset, end: 0.0).animate(
+          CurvedAnimation(parent: _dismissCtrl, curve: Curves.easeOutCubic));
+      _dismissCtrl.duration = const Duration(milliseconds: 220);
+      _dismissCtrl.forward(from: 0);
+    }
   }
 
   Duration get _prStep =>
@@ -205,18 +260,27 @@ class _LogSheetState extends State<LogSheet> {
   Widget build(BuildContext context) {
     final p = BrutalColors.of(context);
     final tu = widget.tweaks.unit.toUpperCase();
+    final mq = MediaQuery.of(context);
+    final sheetTop = mq.size.height * 0.08;
+    _sheetHeight = mq.size.height - sheetTop;
+    final dragProgress =
+        _sheetHeight == 0 ? 0.0 : (_dragOffset / _sheetHeight).clamp(0.0, 1.0);
     return Stack(
       children: [
         GestureDetector(
           onTap: widget.onClose,
-          child: Container(color: Colors.black.withValues(alpha: 0.55)),
+          child: Container(
+            color: Colors.black.withValues(alpha: 0.55 * (1 - dragProgress)),
+          ),
         ),
         Positioned(
           left: 0,
           right: 0,
           bottom: 0,
-          top: MediaQuery.of(context).size.height * 0.08,
-          child: Container(
+          top: sheetTop,
+          child: Transform.translate(
+            offset: Offset(0, _dragOffset),
+            child: Container(
             decoration: BoxDecoration(
               color: p.paper,
               border: Border(top: BorderSide(color: p.ink, width: 3)),
@@ -227,9 +291,9 @@ class _LogSheetState extends State<LogSheet> {
                 GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTap: widget.onClose,
-                  onVerticalDragEnd: (d) {
-                    if ((d.primaryVelocity ?? 0) > 200) widget.onClose();
-                  },
+                  onVerticalDragStart: _onHandleDragStart,
+                  onVerticalDragUpdate: _onHandleDragUpdate,
+                  onVerticalDragEnd: _onHandleDragEnd,
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     child: Center(
@@ -379,6 +443,7 @@ class _LogSheetState extends State<LogSheet> {
                   ),
                 ),
               ],
+            ),
             ),
           ),
         ),
