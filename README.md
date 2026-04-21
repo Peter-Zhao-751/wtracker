@@ -2,7 +2,7 @@
 
 <img src="assets/wordmark-volt.svg" alt="wTRACKER" width="560"/>
 
-### **lift heavy. track honestly. pay nothing.**
+### **The free lift logging app that's somehow better than the paid ones**
 
 <br>
 
@@ -15,7 +15,7 @@
 
 <br>
 
-> We were tired of opening "free" lift trackers and hitting a paywall before we could log our second exercise. **$80 for a lifetime license. $10/month subscriptions. Features locked behind "Pro."** For a spreadsheet with a timer. So we built wTracker. It does more. It costs nothing. We're keeping it that way.
+> I got tired of opening "free" lift trackers and hitting a paywall before I could log my second exercise. **$80 for a lifetime license. $10/month subscriptions. Features locked behind "Pro."** For a spreadsheet with a timer. So I built wTracker. It does more. It costs nothing. 
 
 <br>
 
