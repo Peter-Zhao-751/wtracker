@@ -1,12 +1,12 @@
 <div align="center">
 
-<img src="assets/wordmark-acid.svg" alt="wTRACKER" width="560"/>
+<img src="assets/wordmark-volt.svg" alt="wTRACKER" width="560"/>
 
 ### **lift heavy. track honestly. pay nothing.**
 
 <br>
 
-![Free forever](https://img.shields.io/badge/price-FREE_FOREVER-0a0a0a?style=for-the-badge&labelColor=CCFF00)
+![Free forever](https://img.shields.io/badge/price-FREE_FOREVER-0a0a0a?style=for-the-badge&labelColor=FF4D00)
 ![Flutter](https://img.shields.io/badge/built_with-FLUTTER-0a0a0a?style=for-the-badge&labelColor=F3F0E8)
 ![Platforms](https://img.shields.io/badge/iOS_|_ANDROID_|_WEB-0a0a0a?style=for-the-badge&labelColor=F3F0E8)
 ![License](https://img.shields.io/badge/license-MIT-0a0a0a?style=for-the-badge&labelColor=F3F0E8)
