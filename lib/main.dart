@@ -312,6 +312,7 @@ class _AppShellState extends State<AppShell> {
               child: LogSheet(
                 tweaks: widget.tweaks,
                 prefs: widget.prefs,
+                history: widget.history,
                 onClose: () => setState(() => _logOpen = false),
                 onStart: _start,
                 onFinishQuick: _finish,

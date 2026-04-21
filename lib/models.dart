@@ -81,6 +81,25 @@ class PrRow {
   const PrRow({required this.lift, required this.w, required this.prev, required this.reps, required this.date});
 }
 
+class ExerciseImprovement {
+  final String exerciseName;
+  final double curr;
+  final double prev;
+  final bool isNew;
+  const ExerciseImprovement({
+    required this.exerciseName,
+    required this.curr,
+    required this.prev,
+    required this.isNew,
+  });
+}
+
+class ExerciseSeries {
+  final String name;
+  final List<double> series;
+  const ExerciseSeries({required this.name, required this.series});
+}
+
 class SessionRow {
   final String date;
   final String day;

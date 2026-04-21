@@ -62,7 +62,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
   bool _restDone = false;
   int _activeIdx = 0;
   bool _pickerOpen = false;
-  _PRData? _showPR;
+  PrSplashData? _showPR;
   Timer? _sessionTimer;
   Timer? _restTimer;
   Timer? _restDoneTimer;
@@ -164,7 +164,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
             .fold<double>(0, (a, b) => b.w > a ? b.w : a);
         if (s.w > sessionMax && widget.history.wouldBePR(exName, s.w)) {
           s.isPR = true;
-          _showPR = _PRData(lift: exName, w: s.w, reps: s.reps);
+          _showPR = PrSplashData(lift: exName, w: s.w, reps: s.reps);
           _prTimer?.cancel();
           _prTimer = Timer(const Duration(milliseconds: 2200), () {
             if (mounted) setState(() => _showPR = null);
@@ -317,6 +317,12 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                             ? null
                             : Border(right: BorderSide(color: p.ink, width: 2)),
                       ),
+                      child: isDark
+                          ? Align(
+                              alignment: Alignment.bottomRight,
+                              child: Container(width: 2, height: 25, color: p.ink),
+                            )
+                          : null,
                     ),
                   ),
                   Expanded(
@@ -636,60 +642,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
           ),
         if (_showPR != null)
           Positioned.fill(
-            child: Container(
-              color: Colors.black.withValues(alpha: 0.7),
-              alignment: Alignment.center,
-              child: Transform.rotate(
-                angle: -0.035,
-                child: Container(
-                  padding: const EdgeInsets.fromLTRB(28, 20, 28, 20),
-                  decoration: BoxDecoration(
-                    color: p.accent,
-                    border: Border.all(color: p.ink, width: 3),
-                    boxShadow: [BoxShadow(color: p.ink, offset: const Offset(6, 6))],
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        '★',
-                        style: mono(
-                          size: 48,
-                          weight: FontWeight.w900,
-                          letterSpacing: -2,
-                          color: p.accentInk,
-                          height: 1,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'NEW PR',
-                        style: mono(
-                          size: 28,
-                          weight: FontWeight.w900,
-                          letterSpacing: 2,
-                          color: p.accentInk,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        _showPR!.lift,
-                        style: mono(
-                          size: 13,
-                          weight: FontWeight.w700,
-                          color: p.accentInk.withValues(alpha: 0.8),
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        '${_showPR!.w.toStringAsFixed(0)} ${widget.tweaks.unit.toUpperCase()} × ${_showPR!.reps}',
-                        style: mono(size: 22, weight: FontWeight.w800, color: p.accentInk),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
+            child: PrSplash(data: _showPR!, unit: widget.tweaks.unit),
           ),
         if (_pickerOpen)
           ExercisePickerSheet(
@@ -756,13 +709,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
       ],
     );
   }
-}
-
-class _PRData {
-  final String lift;
-  final double w;
-  final int reps;
-  _PRData({required this.lift, required this.w, required this.reps});
 }
 
 class _ExerciseBlock extends StatelessWidget {

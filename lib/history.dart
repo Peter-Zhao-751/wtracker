@@ -211,24 +211,24 @@ class History extends ChangeNotifier {
     ];
   }
 
-  /// 52-week index curve for [group]: weekly volume normalized 0..100 against
-  /// the group's peak week, then 4-week trailing-averaged for smoothness.
-  /// Length is always 52; empty history yields all zeros.
-  List<int> progressionFor(String group) {
-    final raw = List<double>.filled(52, 0);
+  /// Index curve for [group]: weekly volume normalized 0..100 against the
+  /// group's peak week in the window, then 4-week trailing-averaged for
+  /// smoothness. Length is always [weeks]; empty history yields all zeros.
+  List<int> progressionFor(String group, {int weeks = 52}) {
+    final raw = List<double>.filled(weeks, 0);
     final now = DateTime.now();
     final thisWeek = _weekStart(now);
     for (final s in _sessions) {
       final w = _weekStart(s.date);
       final diff = thisWeek.difference(w).inDays ~/ 7;
-      final idx = 51 - diff;
-      if (idx < 0 || idx >= 52) continue;
+      final idx = weeks - 1 - diff;
+      if (idx < 0 || idx >= weeks) continue;
       for (final l in s.sets) {
         if (l.group == group) raw[idx] += l.w * l.reps;
       }
     }
     final peak = raw.fold<double>(0, (a, b) => b > a ? b : a);
-    if (peak == 0) return List<int>.filled(52, 0);
+    if (peak == 0) return List<int>.filled(weeks, 0);
     final smooth = <int>[];
     for (int i = 0; i < raw.length; i++) {
       final from = (i - 3).clamp(0, raw.length - 1);
@@ -242,6 +242,104 @@ class History extends ChangeNotifier {
       smooth.add(((avg / peak) * 100).round().clamp(0, 100));
     }
     return smooth;
+  }
+
+  /// Number of weeks spanning the oldest logged session to the current week
+  /// (inclusive). Used to size "ALL" / lifetime timeframes. Clamped to a
+  /// minimum of 4 so degenerate charts still have width.
+  int get lifetimeWeeks {
+    if (_sessions.isEmpty) return 4;
+    final oldest = _sessions.first.date;
+    final wks = _weekStart(DateTime.now())
+            .difference(_weekStart(oldest))
+            .inDays ~/
+        7 +
+        1;
+    return wks < 4 ? 4 : wks;
+  }
+
+  /// Per-exercise weekly max-weight series for every exercise in [group]
+  /// across [weeks] trailing weeks. Rest weeks fill-forward the last known
+  /// max so sparklines don't dip to zero between sessions. Exercises with no
+  /// logged sets in the window are omitted. Sorted by most recent max desc.
+  List<ExerciseSeries> perExerciseMaxInGroup(String group, int weeks) {
+    final now = DateTime.now();
+    final thisWeek = _weekStart(now);
+    final byEx = <String, List<double>>{};
+    for (final s in _sessions) {
+      final w = _weekStart(s.date);
+      final diff = thisWeek.difference(w).inDays ~/ 7;
+      final idx = weeks - 1 - diff;
+      if (idx < 0 || idx >= weeks) continue;
+      for (final l in s.sets) {
+        if (l.group != group) continue;
+        final series = byEx.putIfAbsent(
+          l.exerciseName,
+          () => List<double>.filled(weeks, 0),
+        );
+        if (l.w > series[idx]) series[idx] = l.w;
+      }
+    }
+    for (final series in byEx.values) {
+      double last = 0;
+      for (int i = 0; i < series.length; i++) {
+        if (series[i] == 0) {
+          series[i] = last;
+        } else {
+          last = series[i];
+        }
+      }
+    }
+    final out = <ExerciseSeries>[];
+    byEx.forEach((name, series) {
+      if (series.every((v) => v == 0)) return;
+      out.add(ExerciseSeries(name: name, series: series));
+    });
+    out.sort((a, b) => b.series.last.compareTo(a.series.last));
+    return out;
+  }
+
+  /// For [group], returns every exercise logged in the last 8 weeks, sorted by
+  /// improvement in max single-set weight versus weeks 9-34 before that. Novel
+  /// exercises (no prior-window history) are flagged via [ExerciseImprovement.isNew]
+  /// so the UI can badge them rather than show a misleading delta.
+  List<ExerciseImprovement> mostImprovedInGroup(String group) {
+    const recentWeeks = 8;
+    const priorWeeks = 26;
+    final now = DateTime.now();
+    final thisWeek = _weekStart(now);
+    final recentBest = <String, double>{};
+    final priorBest = <String, double>{};
+    for (final s in _sessions) {
+      final w = _weekStart(s.date);
+      final wksBack = thisWeek.difference(w).inDays ~/ 7;
+      for (final l in s.sets) {
+        if (l.group != group) continue;
+        if (wksBack < recentWeeks) {
+          final cur = recentBest[l.exerciseName] ?? 0;
+          if (l.w > cur) recentBest[l.exerciseName] = l.w;
+        } else if (wksBack < recentWeeks + priorWeeks) {
+          final cur = priorBest[l.exerciseName] ?? 0;
+          if (l.w > cur) priorBest[l.exerciseName] = l.w;
+        }
+      }
+    }
+    final out = <ExerciseImprovement>[];
+    for (final name in recentBest.keys) {
+      final curr = recentBest[name]!;
+      if (curr == 0) continue;
+      final prev = priorBest[name] ?? 0;
+      final isNew = prev == 0;
+      if (!isNew && curr <= prev) continue;
+      out.add(ExerciseImprovement(
+        exerciseName: name,
+        curr: curr,
+        prev: prev,
+        isNew: isNew,
+      ));
+    }
+    out.sort((a, b) => (b.curr - b.prev).compareTo(a.curr - a.prev));
+    return out;
   }
 
   List<SessionRow> sessionRows({int limit = 12}) {

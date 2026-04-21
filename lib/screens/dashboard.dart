@@ -229,6 +229,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       allStats: activeRadar,
                       scale: _groupScale,
                       onScale: (s) => setState(() => _groupScale = s),
+                      unit: widget.tweaks.unit,
+                      conv: _conv,
                     );
                   },
                 ),
@@ -964,12 +966,16 @@ class _GroupPage extends StatelessWidget {
   final List<GroupStat> allStats;
   final String scale;
   final ValueChanged<String> onScale;
+  final String unit;
+  final double Function(double) conv;
   const _GroupPage({
     required this.g,
     required this.history,
     required this.allStats,
     required this.scale,
     required this.onScale,
+    required this.unit,
+    required this.conv,
   });
 
   @override
@@ -979,9 +985,10 @@ class _GroupPage extends StatelessWidget {
     final full = history.progressionFor(g.group);
     final data = full.sublist(full.length - weeks);
     final delta = data.last - data.first;
+    final improvements = history.mostImprovedInGroup(g.group);
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 4, 12, 14),
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -1063,7 +1070,7 @@ class _GroupPage extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           SizedBox(
-            height: 140,
+            height: 120,
             child: CustomPaint(
               painter: _GroupLineChartPainter(
                 data: data,
@@ -1072,7 +1079,15 @@ class _GroupPage extends StatelessWidget {
                 accent: p.accent,
                 scaleLabel: scale,
               ),
-              size: const Size(double.infinity, 140),
+              size: const Size(double.infinity, 120),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: _MostImprovedList(
+              items: improvements,
+              unit: unit,
+              conv: conv,
             ),
           ),
         ],
@@ -1099,6 +1114,227 @@ class _GroupPage extends StatelessWidget {
           const SizedBox(width: 10),
           Text(v, style: mono(size: 11, weight: FontWeight.w800, color: p.ink)),
         ],
+      ),
+    );
+  }
+}
+
+/// Vertically scrollable list of the most-improved exercises for a muscle
+/// group. Clamps viewport to exactly [_visibleRows] so only 3 items show at
+/// once; when more rows exist, a dashed line + accent gradient hangs under the
+/// viewport and fades out in lockstep with scroll progress so it vanishes once
+/// the user reaches the bottom.
+class _MostImprovedList extends StatefulWidget {
+  final List<ExerciseImprovement> items;
+  final String unit;
+  final double Function(double) conv;
+  const _MostImprovedList({
+    required this.items,
+    required this.unit,
+    required this.conv,
+  });
+
+  static const double _rowH = 28;
+  static const int _visibleRows = 3;
+
+  @override
+  State<_MostImprovedList> createState() => _MostImprovedListState();
+}
+
+class _MostImprovedListState extends State<_MostImprovedList> {
+  final ScrollController _scroll = ScrollController();
+  double _tailOpacity = 1;
+
+  @override
+  void initState() {
+    super.initState();
+    _scroll.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scroll.removeListener(_onScroll);
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_scroll.hasClients) return;
+    final max = _scroll.position.maxScrollExtent;
+    final next = max <= 0 ? 1.0 : (1 - (_scroll.offset / max)).clamp(0.0, 1.0);
+    if ((next - _tailOpacity).abs() > 0.01) {
+      setState(() => _tailOpacity = next);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = BrutalColors.of(context);
+    final items = widget.items;
+    final labelStyle = mono(
+      size: 10,
+      weight: FontWeight.w700,
+      letterSpacing: 1,
+      color: p.ink.withValues(alpha: 0.6),
+    );
+
+    if (items.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('MOST IMPROVED', style: labelStyle),
+          const SizedBox(height: 4),
+          DashedLine(color: p.ink.withValues(alpha: 0.4)),
+          const Expanded(
+            child: Center(
+              child: _InlineHint('NO IMPROVEMENTS IN 8W'),
+            ),
+          ),
+        ],
+      );
+    }
+
+    final hasOverflow = items.length > _MostImprovedList._visibleRows;
+    final shown = items.length < _MostImprovedList._visibleRows
+        ? items.length
+        : _MostImprovedList._visibleRows;
+    final listH = shown * _MostImprovedList._rowH;
+    final fade = hasOverflow ? _tailOpacity : 0.0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text('MOST IMPROVED', style: labelStyle),
+        const SizedBox(height: 4),
+        DashedLine(color: p.ink.withValues(alpha: 0.4)),
+        SizedBox(
+          height: listH,
+          child: ListView.builder(
+            controller: _scroll,
+            physics: hasOverflow
+                ? const BouncingScrollPhysics()
+                : const NeverScrollableScrollPhysics(),
+            padding: EdgeInsets.zero,
+            itemExtent: _MostImprovedList._rowH,
+            itemCount: items.length,
+            itemBuilder: (ctx, i) => _ImprovementRow(
+              item: items[i],
+              unit: widget.unit,
+              conv: widget.conv,
+              first: i == 0,
+            ),
+          ),
+        ),
+        if (hasOverflow) ...[
+          DashedLine(color: p.ink.withValues(alpha: 0.4 * fade)),
+          Container(
+            height: 14,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  p.accent.withValues(alpha: 0.7 * fade),
+                  p.accent.withValues(alpha: 0),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _ImprovementRow extends StatelessWidget {
+  final ExerciseImprovement item;
+  final String unit;
+  final double Function(double) conv;
+  final bool first;
+  const _ImprovementRow({
+    required this.item,
+    required this.unit,
+    required this.conv,
+    required this.first,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final p = BrutalColors.of(context);
+    final delta = item.curr - item.prev;
+    final chipLabel = item.isNew
+        ? 'NEW'
+        : '+${conv(delta).toStringAsFixed(0)}';
+
+    return Column(
+      children: [
+        if (!first) DashedLine(color: p.ink.withValues(alpha: 0.25)),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    item.exerciseName,
+                    overflow: TextOverflow.ellipsis,
+                    style: mono(
+                      size: 11,
+                      weight: FontWeight.w800,
+                      letterSpacing: 0.3,
+                      color: p.ink,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  '${conv(item.curr).toStringAsFixed(0)} ${unit.toUpperCase()}',
+                  style: mono(
+                    size: 10,
+                    weight: FontWeight.w700,
+                    color: p.ink.withValues(alpha: 0.7),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: p.accent,
+                    border: Border.all(color: p.ink, width: 1.5),
+                  ),
+                  child: Text(
+                    chipLabel,
+                    style: mono(
+                      size: 9,
+                      weight: FontWeight.w800,
+                      letterSpacing: 0.3,
+                      color: p.accentInk,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _InlineHint extends StatelessWidget {
+  final String text;
+  const _InlineHint(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    final p = BrutalColors.of(context);
+    return Text(
+      text,
+      style: mono(
+        size: 9,
+        weight: FontWeight.w700,
+        letterSpacing: 1.5,
+        color: p.ink.withValues(alpha: 0.45),
       ),
     );
   }

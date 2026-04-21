@@ -492,6 +492,103 @@ Widget Function(Widget, int, Animation<double>) brutalGhostDecorator(
   };
 }
 
+class PrSplashData {
+  final String lift;
+  final double w;
+  final int reps;
+  const PrSplashData({required this.lift, required this.w, required this.reps});
+}
+
+/// Rotated accent splash shown when a set beats every previously-logged weight
+/// for that lift. Host mounts this inside a [Positioned.fill] container and
+/// clears it on a timer — the widget is purely presentational. When [total]
+/// > 1 a "PR N OF M" counter is rendered so multi-PR sequences self-announce.
+class PrSplash extends StatelessWidget {
+  final PrSplashData data;
+  final String unit;
+  final int index;
+  final int total;
+  const PrSplash({
+    super.key,
+    required this.data,
+    required this.unit,
+    this.index = 1,
+    this.total = 1,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final p = BrutalColors.of(context);
+    final multi = total > 1;
+    return Container(
+      color: Colors.black.withValues(alpha: 0.7),
+      alignment: Alignment.center,
+      child: Transform.rotate(
+        angle: -0.035,
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(28, 20, 28, 20),
+          decoration: BoxDecoration(
+            color: p.accent,
+            border: Border.all(color: p.ink, width: 3),
+            boxShadow: [BoxShadow(color: p.ink, offset: const Offset(6, 6))],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (multi) ...[
+                Text(
+                  'PR $index OF $total',
+                  style: mono(
+                    size: 11,
+                    weight: FontWeight.w800,
+                    letterSpacing: 2.5,
+                    color: p.accentInk.withValues(alpha: 0.65),
+                  ),
+                ),
+                const SizedBox(height: 6),
+              ],
+              Text(
+                '★',
+                style: mono(
+                  size: 48,
+                  weight: FontWeight.w900,
+                  letterSpacing: -2,
+                  color: p.accentInk,
+                  height: 1,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'NEW PR',
+                style: mono(
+                  size: 28,
+                  weight: FontWeight.w900,
+                  letterSpacing: 2,
+                  color: p.accentInk,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                data.lift,
+                style: mono(
+                  size: 13,
+                  weight: FontWeight.w700,
+                  color: p.accentInk.withValues(alpha: 0.8),
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                '${data.w.toStringAsFixed(0)} ${unit.toUpperCase()} × ${data.reps}',
+                style: mono(size: 22, weight: FontWeight.w800, color: p.accentInk),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class DashedLine extends StatelessWidget {
   final Color color;
   final double dash;

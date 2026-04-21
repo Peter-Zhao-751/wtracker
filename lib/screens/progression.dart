@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../history.dart';
+import '../models.dart';
 import '../state.dart';
 import '../theme.dart';
 import '../widgets/drag_list.dart';
@@ -23,11 +24,34 @@ class ProgressionScreen extends StatefulWidget {
 
 class _ProgressionScreenState extends State<ProgressionScreen> {
   String _focus = 'LEGS';
+  String _scale = '12W';
+
+  static const _scaleOpts = ['4W', '12W', '26W', '52W', 'ALL'];
+
+  int _weeksForScale(String s) {
+    switch (s) {
+      case '4W':
+        return 4;
+      case '12W':
+        return 12;
+      case '26W':
+        return 26;
+      case '52W':
+        return 52;
+      case 'ALL':
+        return widget.history.lifetimeWeeks;
+    }
+    return 12;
+  }
+
+  String _scaleTagLabel(String s) => s == 'ALL' ? 'LIFETIME' : s;
 
   String _volConv(double v) => widget.tweaks.unit == 'kg'
       ? (v * 0.4536).toStringAsFixed(1)
       : v.toStringAsFixed(1);
   String _volUnit() => widget.tweaks.unit == 'kg' ? 't' : 'k';
+  double _wConv(double lbs) =>
+      widget.tweaks.unit == 'kg' ? (lbs * 0.4536).roundToDouble() : lbs;
 
   @override
   void initState() {
@@ -48,10 +72,13 @@ class _ProgressionScreenState extends State<ProgressionScreen> {
   @override
   Widget build(BuildContext context) {
     final p = BrutalColors.of(context);
-    final groupData = widget.history.progressionFor(_focus);
-    final data = groupData.sublist(groupData.length - 12);
+    final weeks = _weeksForScale(_scale);
+    final data = widget.history.progressionFor(_focus, weeks: weeks);
     final delta = data.last - data.first;
+    final exSeries = widget.history.perExerciseMaxInGroup(_focus, weeks);
     final sessions = widget.history.sessionRows();
+    final scaleTag = _scaleTagLabel(_scale);
+    final deltaTag = _scale == 'ALL' ? 'ALL Δ' : '$_scale DELTA';
 
     return ListenableBuilder(
       listenable: widget.prefs,
@@ -76,7 +103,7 @@ class _ProgressionScreenState extends State<ProgressionScreen> {
         ),
         const SizedBox(height: 12),
         BrutalBox(
-          tag: '$_focus · 12 WEEKS',
+          tag: '$_focus · $scaleTag',
           padding: const EdgeInsets.fromLTRB(12, 22, 12, 12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -114,7 +141,7 @@ class _ProgressionScreenState extends State<ProgressionScreen> {
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Text(
-                        '12W DELTA',
+                        deltaTag,
                         style: mono(
                           size: 9,
                           weight: FontWeight.w700,
@@ -142,7 +169,15 @@ class _ProgressionScreenState extends State<ProgressionScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
+              Segmented(
+                opts: _scaleOpts,
+                value: _scale,
+                onChange: (s) => setState(() => _scale = s),
+                height: 28,
+                fontSize: 10,
+              ),
+              const SizedBox(height: 10),
               SizedBox(
                 height: 140,
                 child: CustomPaint(
@@ -151,9 +186,27 @@ class _ProgressionScreenState extends State<ProgressionScreen> {
                     ink: p.ink,
                     paper: p.paper,
                     accent: p.accent,
+                    scaleLabel: scaleTag,
+                    weeks: weeks,
                   ),
                   size: const Size(double.infinity, 140),
                 ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                'EXERCISE LOADS · $scaleTag',
+                style: mono(
+                  size: 9,
+                  weight: FontWeight.w700,
+                  letterSpacing: 1,
+                  color: p.ink.withValues(alpha: 0.6),
+                ),
+              ),
+              const SizedBox(height: 6),
+              _ExerciseProgList(
+                items: exSeries,
+                unit: widget.tweaks.unit,
+                conv: _wConv,
               ),
             ],
           ),
@@ -465,18 +518,25 @@ class _ProgLinePainter extends CustomPainter {
   final Color ink;
   final Color paper;
   final Color accent;
+  final String scaleLabel;
+  final int weeks;
   _ProgLinePainter({
     required this.data,
     required this.ink,
     required this.paper,
     required this.accent,
+    required this.scaleLabel,
+    required this.weeks,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
     if (data.isEmpty) return;
-    final w = size.width;
-    final h = size.height - 22;
+    const yLabelW = 28.0;
+    const xLabelH = 22.0;
+    final chartX = yLabelW;
+    final chartW = size.width - chartX;
+    final h = size.height - xLabelH;
     final min = data.reduce((a, b) => a < b ? a : b);
     final max = data.reduce((a, b) => a > b ? a : b);
     final range = (max - min) == 0 ? 1 : (max - min);
@@ -484,14 +544,26 @@ class _ProgLinePainter extends CustomPainter {
     final gridPaint = Paint()
       ..color = ink.withValues(alpha: 0.25)
       ..strokeWidth = 0.5;
-    for (final f in [0.0, 0.25, 0.5, 0.75, 1.0]) {
+    const levels = [0.0, 0.25, 0.5, 0.75, 1.0];
+    for (final f in levels) {
       final y = h * f;
-      _drawDashedLine(canvas, Offset(0, y), Offset(w, y), gridPaint, 2, 3);
+      _drawDashedLine(canvas, Offset(chartX, y), Offset(size.width, y), gridPaint, 2, 3);
+      final value = (max - range * f).round();
+      const textH = 10.0;
+      final ty = (y - textH / 2).clamp(0.0, h - textH);
+      _drawText(
+        canvas,
+        value.toString(),
+        Offset(chartX - 4, ty),
+        ink.withValues(alpha: 0.5),
+        Alignment.topRight,
+        size: 8,
+      );
     }
 
     final points = <Offset>[];
     for (int i = 0; i < data.length; i++) {
-      final x = (i / (data.length - 1)) * w;
+      final x = chartX + (i / (data.length - 1)) * chartW;
       final y = h - ((data[i] - min) / range) * h;
       points.add(Offset(x, y));
     }
@@ -500,8 +572,8 @@ class _ProgLinePainter extends CustomPainter {
     for (final pt in points.skip(1)) {
       areaPath.lineTo(pt.dx, pt.dy);
     }
-    areaPath.lineTo(w, h);
-    areaPath.lineTo(0, h);
+    areaPath.lineTo(size.width, h);
+    areaPath.lineTo(chartX, h);
     areaPath.close();
     canvas.drawPath(areaPath, Paint()..color = accent.withValues(alpha: 0.4));
 
@@ -518,25 +590,28 @@ class _ProgLinePainter extends CustomPainter {
         ..strokeJoin = StrokeJoin.miter,
     );
 
-    for (final pt in points) {
-      final r = Rect.fromCenter(center: pt, width: 5, height: 5);
-      canvas.drawRect(r, Paint()..color = paper);
-      canvas.drawRect(
-        r,
-        Paint()
-          ..color = ink
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.5,
-      );
+    final step = (data.length / 20).ceil().clamp(1, data.length);
+    for (int i = 0; i < points.length; i++) {
+      if (data.length <= 26 || i % step == 0) {
+        final r = Rect.fromCenter(center: points[i], width: 4, height: 4);
+        canvas.drawRect(r, Paint()..color = paper);
+        canvas.drawRect(
+          r,
+          Paint()
+            ..color = ink
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.2,
+        );
+      }
     }
 
     final last = points.last;
     canvas.drawRect(
-      Rect.fromCenter(center: last, width: 10, height: 10),
+      Rect.fromCenter(center: last, width: 8, height: 8),
       Paint()..color = accent,
     );
     canvas.drawRect(
-      Rect.fromCenter(center: last, width: 10, height: 10),
+      Rect.fromCenter(center: last, width: 8, height: 8),
       Paint()
         ..color = ink
         ..style = PaintingStyle.stroke
@@ -544,15 +619,36 @@ class _ProgLinePainter extends CustomPainter {
     );
 
     canvas.drawLine(
-      Offset(0, h),
-      Offset(w, h),
+      Offset(chartX, h),
+      Offset(size.width, h),
       Paint()
         ..color = ink
         ..strokeWidth = 1.5,
     );
 
-    _drawText(canvas, 'W−11', Offset(0, h + 8), ink.withValues(alpha: 0.5), Alignment.topLeft);
-    _drawText(canvas, 'NOW', Offset(w, h + 8), ink.withValues(alpha: 0.5), Alignment.topRight);
+    final xLabels = <String>[
+      '${weeks}W AGO',
+      '${(weeks * 0.75).round()}W',
+      '${(weeks * 0.5).round()}W',
+      '${(weeks * 0.25).round()}W',
+      'NOW',
+    ];
+    for (int i = 0; i < xLabels.length; i++) {
+      final f = i / (xLabels.length - 1);
+      final x = chartX + chartW * f;
+      final align = i == 0
+          ? Alignment.topLeft
+          : i == xLabels.length - 1
+              ? Alignment.topRight
+              : Alignment.topCenter;
+      _drawText(
+        canvas,
+        xLabels[i],
+        Offset(x, h + 8),
+        ink.withValues(alpha: 0.5),
+        align,
+      );
+    }
   }
 
   void _drawDashedLine(Canvas canvas, Offset from, Offset to, Paint paint, double dash, double gap) {
@@ -566,20 +662,32 @@ class _ProgLinePainter extends CustomPainter {
     }
   }
 
-  void _drawText(Canvas canvas, String text, Offset at, Color color, Alignment align) {
+  void _drawText(
+    Canvas canvas,
+    String text,
+    Offset at,
+    Color color,
+    Alignment align, {
+    double size = 9,
+  }) {
     final tp = TextPainter(
-      text: TextSpan(text: text, style: mono(size: 9, color: color)),
+      text: TextSpan(text: text, style: mono(size: size, color: color)),
       textDirection: TextDirection.ltr,
     );
     tp.layout();
     double dx = at.dx;
     if (align == Alignment.topRight) dx -= tp.width;
+    if (align == Alignment.topCenter) dx -= tp.width / 2;
     tp.paint(canvas, Offset(dx, at.dy));
   }
 
   @override
   bool shouldRepaint(_ProgLinePainter old) =>
-      old.data != data || old.ink != ink || old.accent != accent;
+      old.data != data ||
+      old.ink != ink ||
+      old.accent != accent ||
+      old.scaleLabel != scaleLabel ||
+      old.weeks != weeks;
 }
 
 class _SparkLinePainter extends CustomPainter {
@@ -614,4 +722,229 @@ class _SparkLinePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_SparkLinePainter old) => old.data != data || old.color != color;
+}
+
+class _ExerciseProgList extends StatefulWidget {
+  final List<ExerciseSeries> items;
+  final String unit;
+  final double Function(double) conv;
+  const _ExerciseProgList({
+    required this.items,
+    required this.unit,
+    required this.conv,
+  });
+
+  static const double _rowH = 32;
+  static const int _visibleRows = 5;
+
+  @override
+  State<_ExerciseProgList> createState() => _ExerciseProgListState();
+}
+
+class _ExerciseProgListState extends State<_ExerciseProgList> {
+  final ScrollController _scroll = ScrollController();
+  double _tailOpacity = 1;
+
+  @override
+  void initState() {
+    super.initState();
+    _scroll.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scroll.removeListener(_onScroll);
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_scroll.hasClients) return;
+    final max = _scroll.position.maxScrollExtent;
+    final next = max <= 0 ? 1.0 : (1 - (_scroll.offset / max)).clamp(0.0, 1.0);
+    if ((next - _tailOpacity).abs() > 0.01) {
+      setState(() => _tailOpacity = next);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = BrutalColors.of(context);
+    final items = widget.items;
+
+    if (items.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          DashedLine(color: p.ink.withValues(alpha: 0.4)),
+          SizedBox(
+            height: _ExerciseProgList._rowH,
+            child: Center(
+              child: Text(
+                'NO EXERCISES IN WINDOW',
+                style: mono(
+                  size: 9,
+                  weight: FontWeight.w700,
+                  letterSpacing: 1.5,
+                  color: p.ink.withValues(alpha: 0.45),
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    final hasOverflow = items.length > _ExerciseProgList._visibleRows;
+    final shown = items.length < _ExerciseProgList._visibleRows
+        ? items.length
+        : _ExerciseProgList._visibleRows;
+    final listH = shown * _ExerciseProgList._rowH;
+    final fade = hasOverflow ? _tailOpacity : 0.0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        DashedLine(color: p.ink.withValues(alpha: 0.4)),
+        SizedBox(
+          height: listH,
+          child: ListView.builder(
+            controller: _scroll,
+            physics: hasOverflow
+                ? const BouncingScrollPhysics()
+                : const NeverScrollableScrollPhysics(),
+            padding: EdgeInsets.zero,
+            itemExtent: _ExerciseProgList._rowH,
+            itemCount: items.length,
+            itemBuilder: (ctx, i) => _ExerciseProgRow(
+              item: items[i],
+              unit: widget.unit,
+              conv: widget.conv,
+              first: i == 0,
+            ),
+          ),
+        ),
+        if (hasOverflow) ...[
+          DashedLine(color: p.ink.withValues(alpha: 0.4 * fade)),
+          Container(
+            height: 14,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  p.accent.withValues(alpha: 0.7 * fade),
+                  p.accent.withValues(alpha: 0),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _ExerciseProgRow extends StatelessWidget {
+  final ExerciseSeries item;
+  final String unit;
+  final double Function(double) conv;
+  final bool first;
+  const _ExerciseProgRow({
+    required this.item,
+    required this.unit,
+    required this.conv,
+    required this.first,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final p = BrutalColors.of(context);
+    final series = item.series;
+    final curr = series.last;
+    double prev = 0;
+    for (final v in series) {
+      if (v > 0) {
+        prev = v;
+        break;
+      }
+    }
+    final delta = curr - prev;
+    final chipLabel = prev == 0 || prev == curr
+        ? '—'
+        : '${delta >= 0 ? '+' : ''}${conv(delta).toStringAsFixed(0)}';
+    final chipColor = delta > 0
+        ? p.accent
+        : (delta < 0 ? p.ink : p.paper);
+    final chipInk = delta > 0
+        ? p.accentInk
+        : (delta < 0 ? p.paper : p.ink.withValues(alpha: 0.6));
+    final sparkData = series.map((v) => v.round()).toList();
+
+    return Column(
+      children: [
+        if (!first) DashedLine(color: p.ink.withValues(alpha: 0.25)),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 98,
+                  child: Text(
+                    item.name,
+                    overflow: TextOverflow.ellipsis,
+                    style: mono(
+                      size: 11,
+                      weight: FontWeight.w800,
+                      letterSpacing: 0.3,
+                      color: p.ink,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: SizedBox(
+                    height: 22,
+                    child: CustomPaint(
+                      painter: _SparkLinePainter(
+                        data: sparkData,
+                        color: p.ink,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '${conv(curr).toStringAsFixed(0)} ${unit.toUpperCase()}',
+                  style: mono(
+                    size: 10,
+                    weight: FontWeight.w700,
+                    color: p.ink.withValues(alpha: 0.75),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: chipColor,
+                    border: Border.all(color: p.ink, width: 1.5),
+                  ),
+                  child: Text(
+                    chipLabel,
+                    style: mono(
+                      size: 9,
+                      weight: FontWeight.w800,
+                      letterSpacing: 0.3,
+                      color: chipInk,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 }

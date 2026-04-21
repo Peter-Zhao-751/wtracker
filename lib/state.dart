@@ -1,3 +1,5 @@
+import 'dart:ui' show PlatformDispatcher, Brightness;
+
 import 'package:flutter/foundation.dart';
 import 'data.dart';
 import 'storage.dart';
@@ -53,7 +55,17 @@ class Tweaks extends ChangeNotifier {
       final loaded = (saved['groupOrder'] as List).cast().map((e) => e.toString());
       _groupOrder = _reconcileGroupOrder(loaded);
     }
-    _theme = (saved['theme'] as String?) ?? _theme;
+    final savedTheme = saved['theme'] as String?;
+    if (savedTheme != null) {
+      _theme = savedTheme;
+    } else {
+      // First launch: match the OS appearance so the app opens in whatever
+      // mode the phone is in. User's explicit toggle in Tweaks will persist
+      // and take over on subsequent launches.
+      final sysDark =
+          PlatformDispatcher.instance.platformBrightness == Brightness.dark;
+      _theme = sysDark ? 'dark' : 'light';
+    }
     notifyListeners();
   }
 

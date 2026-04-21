@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../history.dart';
 import '../models.dart';
 import '../state.dart';
 import '../theme.dart';
@@ -11,6 +14,7 @@ import 'exercise_picker.dart';
 class LogSheet extends StatefulWidget {
   final Tweaks tweaks;
   final Prefs prefs;
+  final History history;
   final VoidCallback onClose;
   final void Function(Template) onStart;
   /// QUICK mode commits a completed session straight to history instead of
@@ -21,6 +25,7 @@ class LogSheet extends StatefulWidget {
     super.key,
     required this.tweaks,
     required this.prefs,
+    required this.history,
     required this.onClose,
     required this.onStart,
     this.onFinishQuick,
@@ -61,6 +66,32 @@ class _LogSheetState extends State<LogSheet> {
   final List<_PlannerExercise> _exs = [];
   bool _pickerOpen = false;
   _LogMode _mode = _LogMode.quick;
+  List<PrSplashData> _prQueue = const [];
+  int _prIdx = 0;
+  Timer? _prTimer;
+
+  @override
+  void dispose() {
+    _prTimer?.cancel();
+    super.dispose();
+  }
+
+  Duration get _prStep =>
+      Duration(milliseconds: _prQueue.length > 1 ? 1600 : 2200);
+
+  void _advancePR(ActiveSummary summary) {
+    _prTimer?.cancel();
+    _prTimer = Timer(_prStep, () {
+      if (!mounted) return;
+      if (_prIdx + 1 < _prQueue.length) {
+        setState(() => _prIdx++);
+        _advancePR(summary);
+      } else {
+        widget.onFinishQuick?.call(summary);
+        widget.onClose();
+      }
+    });
+  }
 
   void _add(Map<String, dynamic> p) {
     final reps = (p['reps'] as String?) ?? '8';
@@ -120,22 +151,30 @@ class _LogSheetState extends State<LogSheet> {
 
   void _enterQuick() {
     if (_exs.isEmpty) return;
-    final liveExs = <LiveExercise>[
-      for (final e in _exs)
-        LiveExercise(
-          name: e.name,
-          group: e.group,
-          reps: '${e.reps}',
-          log: [
-            for (final s in e.logs)
-              SetLog(w: s.w, reps: s.reps, done: true),
-          ],
-        ),
-    ];
+    final prs = <PrSplashData>[];
+    final liveExs = <LiveExercise>[];
+    for (final e in _exs) {
+      double sessionMax = 0;
+      final log = <SetLog>[];
+      for (final s in e.logs) {
+        final isPR = s.w > sessionMax && widget.history.wouldBePR(e.name, s.w);
+        if (isPR) {
+          sessionMax = s.w;
+          prs.add(PrSplashData(lift: e.name, w: s.w, reps: s.reps));
+        }
+        log.add(SetLog(w: s.w, reps: s.reps, done: true, isPR: isPR));
+      }
+      liveExs.add(LiveExercise(
+        name: e.name,
+        group: e.group,
+        reps: '${e.reps}',
+        log: log,
+      ));
+    }
     var totalSets = 0;
     var totalVol = 0.0;
-    for (final e in liveExs) {
-      for (final s in e.log) {
+    for (final ex in liveExs) {
+      for (final s in ex.log) {
         totalSets++;
         totalVol += s.w * s.reps;
       }
@@ -150,8 +189,16 @@ class _LogSheetState extends State<LogSheet> {
       saveAsTpl: false,
       updateTpl: false,
     );
-    widget.onFinishQuick?.call(summary);
-    widget.onClose();
+    if (prs.isEmpty) {
+      widget.onFinishQuick?.call(summary);
+      widget.onClose();
+      return;
+    }
+    setState(() {
+      _prQueue = prs;
+      _prIdx = 0;
+    });
+    _advancePR(summary);
   }
 
   @override
@@ -375,6 +422,19 @@ class _LogSheetState extends State<LogSheet> {
             prefs: widget.prefs,
             onClose: () => setState(() => _pickerOpen = false),
             onPick: _add,
+          ),
+        if (_prQueue.isNotEmpty)
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () {},
+              child: PrSplash(
+                data: _prQueue[_prIdx],
+                unit: widget.tweaks.unit,
+                index: _prIdx + 1,
+                total: _prQueue.length,
+              ),
+            ),
           ),
       ],
     );
