@@ -263,14 +263,6 @@ No trial. No freemium. No "unlock with a review." Just the app.
 
 Found a bug? Want a feature? Open an issue or send a PR.
 
-This was built in two hours by two people who were annoyed. With a little help it can be something genuinely great — and still free.
+This was built in two hours by a dude who got annoyed. With a little help it can be something genuinely great (and still free).
 
 <br>
-
----
-
-<div align="center">
-
-<sub>made with frustration and Flutter · MIT licensed · no paywalls were harmed in the making of this app</sub>
-
-</div>
