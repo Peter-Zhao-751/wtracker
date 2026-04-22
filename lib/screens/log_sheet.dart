@@ -151,11 +151,13 @@ class _LogSheetState extends State<LogSheet>
   void _add(Map<String, dynamic> p) {
     final reps = (p['reps'] as String?) ?? '8';
     final repNum = int.tryParse(reps.split('-').last.replaceAll(RegExp(r'[^0-9]'), '')) ?? 8;
-    final w = (p['w'] as num?)?.toDouble() ?? 0;
+    final name = p['name'] as String;
+    final lastW = widget.history.lastWeightFor(name);
+    final w = lastW ?? (p['w'] as num?)?.toDouble() ?? 0;
     setState(() {
       _exs.add(_PlannerExercise(
         uid: 'ex_${DateTime.now().microsecondsSinceEpoch}',
-        name: p['name'] as String,
+        name: name,
         group: p['group'] as String,
         sets: 3,
         reps: repNum,

@@ -35,6 +35,24 @@ class History extends ChangeNotifier {
     return w > max && w > 0;
   }
 
+  /// Heaviest weight logged for [exerciseName] in the most recent session
+  /// that included it — used to seed "the weight you did last time" as the
+  /// default when starting a new session. Picks the max within that session
+  /// since a ramp-to-top workout's top set reads as the working weight.
+  /// Returns null if the lift has never been logged.
+  double? lastWeightFor(String exerciseName) {
+    for (int i = _sessions.length - 1; i >= 0; i--) {
+      double? best;
+      for (final s in _sessions[i].sets) {
+        if (s.exerciseName == exerciseName) {
+          if (best == null || s.w > best) best = s.w;
+        }
+      }
+      if (best != null) return best;
+    }
+    return null;
+  }
+
   Future<void> add(SessionRecord record) async {
     _sessions = [..._sessions, record]..sort((a, b) => a.date.compareTo(b.date));
     notifyListeners();
