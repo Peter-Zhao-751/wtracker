@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:wtracker/core/models.dart';
 import 'package:wtracker/core/strength_standards.dart';
 import 'package:wtracker/services/muscle_score.dart';
 
@@ -126,6 +127,98 @@ void main() {
 
     test('isolation curve scales correctly (lateral raise at 30 = 75)', () {
       expect(scoreLift('LATERAL RAISE', 30), 75);
+    });
+  });
+
+  group('groupScore', () {
+    final now = DateTime(2026, 4, 21);
+    SessionRecord session(int daysAgo, List<LoggedSet> sets) => SessionRecord(
+          date: now.subtract(Duration(days: daysAgo)),
+          name: 'T',
+          split: 'PPL',
+          durSec: 0,
+          sets: sets,
+        );
+    LoggedSet set(String name, String group, double w, int reps) =>
+        LoggedSet(exerciseName: name, group: group, w: w, reps: reps, isPR: false);
+
+    test('empty sessions -> 0', () {
+      expect(
+        groupScore(const [], 'CHEST', windowEnd: now, windowWeeks: 4),
+        0,
+      );
+    });
+
+    test('single bench 225x1 -> ~77', () {
+      final hist = [
+        session(3, [set('BENCH PRESS', 'CHEST', 225, 1)]),
+      ];
+      // 225x1 Epley = 232.5 -> interpolates (225,75)-(275,85): ~77.
+      final s = groupScore(hist, 'CHEST', windowEnd: now, windowWeeks: 4);
+      expect(s, inInclusiveRange(75, 80));
+    });
+
+    test('compound double-weighted vs isolation', () {
+      final hist = [
+        session(3, [
+          set('BENCH PRESS', 'CHEST', 225, 1),
+          set('CABLE FLY', 'CHEST', 90, 1),
+        ]),
+      ];
+      final s = groupScore(hist, 'CHEST', windowEnd: now, windowWeeks: 4);
+      expect(s, inInclusiveRange(78, 88));
+    });
+
+    test('top-3 cap — high compound dominates', () {
+      final hist = [
+        session(3, [set('BENCH PRESS', 'CHEST', 315, 1)]),
+        session(4, [set('CABLE FLY', 'CHEST', 30, 1)]),
+      ];
+      final s = groupScore(hist, 'CHEST', windowEnd: now, windowWeeks: 4);
+      expect(s, greaterThanOrEqualTo(70));
+    });
+
+    test('bodyweight-only (w=0) is skipped', () {
+      final hist = [
+        session(3, [set('PULL-UP', 'BACK', 0, 8)]),
+      ];
+      expect(
+        groupScore(hist, 'BACK', windowEnd: now, windowWeeks: 4),
+        0,
+      );
+    });
+
+    test('unknown exercise is skipped', () {
+      final hist = [
+        session(3, [set('MADE UP LIFT', 'CHEST', 500, 5)]),
+      ];
+      expect(
+        groupScore(hist, 'CHEST', windowEnd: now, windowWeeks: 4),
+        0,
+      );
+    });
+
+    test('sessions outside window are ignored', () {
+      final hist = [
+        session(100, [set('BENCH PRESS', 'CHEST', 315, 1)]),
+      ];
+      expect(
+        groupScore(hist, 'CHEST', windowEnd: now, windowWeeks: 4),
+        0,
+      );
+    });
+
+    test('uses best 1RM per exercise within window', () {
+      // Three bench sessions in window: 185x5, 225x1, 135x10.
+      // Epley 1RMs: 185*(1+5/30)=216, 225*(1+1/30)=232.5, 135*(1+10/30)=180.
+      // Max is 232.5 -> ~77.
+      final hist = [
+        session(1, [set('BENCH PRESS', 'CHEST', 185, 5)]),
+        session(5, [set('BENCH PRESS', 'CHEST', 225, 1)]),
+        session(10, [set('BENCH PRESS', 'CHEST', 135, 10)]),
+      ];
+      final s = groupScore(hist, 'CHEST', windowEnd: now, windowWeeks: 4);
+      expect(s, inInclusiveRange(75, 80));
     });
   });
 }
