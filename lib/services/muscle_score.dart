@@ -89,3 +89,32 @@ class _ScoredLift {
   final double weight;
   const _ScoredLift(this.score, this.weight);
 }
+
+/// Score for [group] at each of the trailing [weeks] weeks, oldest first,
+/// using a rolling 4-week trailing window at each point. The last element
+/// corresponds to "current" and will match [groupScore] called with the same
+/// [now] as windowEnd. [now] defaults to DateTime.now(); overridable for tests.
+List<int> weeklyGroupScores(
+  List<SessionRecord> sessions,
+  String group, {
+  required int weeks,
+  DateTime? now,
+}) {
+  final n = now ?? DateTime.now();
+  final thisWeekStart = _weekStart(n);
+  final out = <int>[];
+  for (int i = 0; i < weeks; i++) {
+    final weeksBack = weeks - 1 - i;
+    final weekEnd = thisWeekStart
+        .add(const Duration(days: 7))
+        .subtract(Duration(days: weeksBack * 7));
+    out.add(groupScore(sessions, group, windowEnd: weekEnd, windowWeeks: 4));
+  }
+  return out;
+}
+
+/// Monday-based start-of-week for [d]. Mirrors the convention in history.dart.
+DateTime _weekStart(DateTime d) {
+  final day = DateTime(d.year, d.month, d.day);
+  return day.subtract(Duration(days: day.weekday - 1));
+}

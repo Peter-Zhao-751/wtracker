@@ -221,4 +221,56 @@ void main() {
       expect(s, inInclusiveRange(75, 80));
     });
   });
+
+  group('weeklyGroupScores', () {
+    SessionRecord session(DateTime at, List<LoggedSet> sets) => SessionRecord(
+          date: at,
+          name: 'T',
+          split: 'PPL',
+          durSec: 0,
+          sets: sets,
+        );
+    LoggedSet set(String name, String group, double w, int reps) =>
+        LoggedSet(exerciseName: name, group: group, w: w, reps: reps, isPR: false);
+
+    test('returns a list of length [weeks]', () {
+      final out = weeklyGroupScores(
+        const [],
+        'CHEST',
+        weeks: 12,
+        now: DateTime(2026, 4, 21),
+      );
+      expect(out.length, 12);
+      expect(out.every((v) => v == 0), isTrue);
+    });
+
+    test('a recent session raises the last point but not the oldest', () {
+      final now = DateTime(2026, 4, 21); // Tuesday
+      final hist = [
+        session(now.subtract(const Duration(days: 1)), [
+          set('BENCH PRESS', 'CHEST', 225, 1),
+        ]),
+      ];
+      final out = weeklyGroupScores(hist, 'CHEST', weeks: 4, now: now);
+      // Most recent point's 4-week trailing window includes the session.
+      expect(out.last, greaterThan(70));
+      // Oldest point's window ends ~3 weeks before the session, so excludes it.
+      expect(out[0], 0);
+    });
+
+    test('bench session drops out of trailing 4-week window after 4 weeks', () {
+      final now = DateTime(2026, 4, 21);
+      // Session 40 days ago -> in window for earliest weeks, gone by now.
+      final hist = [
+        session(now.subtract(const Duration(days: 40)), [
+          set('BENCH PRESS', 'CHEST', 315, 1),
+        ]),
+      ];
+      final out = weeklyGroupScores(hist, 'CHEST', weeks: 12, now: now);
+      // Most recent point: session is outside the trailing 4 weeks -> 0.
+      expect(out.last, 0);
+      // Earlier points that DID include the session: non-zero.
+      expect(out.take(8).any((v) => v > 0), isTrue);
+    });
+  });
 }
