@@ -88,4 +88,44 @@ void main() {
       expect(estimate1RM(225, 0), 0);
     });
   });
+
+  group('scoreLift', () {
+    test('bench at 225 scores 75', () {
+      expect(scoreLift('BENCH PRESS', 225), 75);
+    });
+
+    test('bench at 315 scores 95', () {
+      expect(scoreLift('BENCH PRESS', 315), 95);
+    });
+
+    test('bench at 191 (from 155x7) scores ~62', () {
+      expect(scoreLift('BENCH PRESS', 191), inInclusiveRange(61, 63));
+    });
+
+    test('bench at 95 (the bar) scores 25', () {
+      expect(scoreLift('BENCH PRESS', 95), inInclusiveRange(24, 26));
+    });
+
+    test('bench above top anchor clamps at 100', () {
+      expect(scoreLift('BENCH PRESS', 500), 100);
+      expect(scoreLift('BENCH PRESS', 1000), 100);
+    });
+
+    test('bench at zero scores 0', () {
+      expect(scoreLift('BENCH PRESS', 0), 0);
+    });
+
+    test('linear interpolation between anchors', () {
+      // Between (225, 75) and (275, 85): midpoint 250 -> 80
+      expect(scoreLift('BENCH PRESS', 250), 80);
+    });
+
+    test('unknown exercise returns null', () {
+      expect(scoreLift('MADE UP LIFT', 225), isNull);
+    });
+
+    test('isolation curve scales correctly (lateral raise at 30 = 75)', () {
+      expect(scoreLift('LATERAL RAISE', 30), 75);
+    });
+  });
 }
