@@ -74,16 +74,31 @@ class _ProgressionScreenState extends State<ProgressionScreen> {
     final p = BrutalColors.of(context);
     final weeks = _weeksForScale(_scale);
     final data = widget.history.progressionFor(_focus, weeks: weeks);
-    final delta = data.last - data.first;
     final exSeries = widget.history.perExerciseMaxInGroup(_focus, weeks);
     final sessions = widget.history.sessionRows();
     final scaleTag = _scaleTagLabel(_scale);
-    final deltaTag = _scale == 'ALL' ? 'ALL Δ' : '$_scale DELTA';
+    // Delta uses the 4W cross-group window (matches radar/INDEX), not the
+    // scale selector — otherwise a trained muscle always shows +100 at
+    // longer scales since progressionFor is own-peak normalized.
+    final deltaTag = '4W Δ';
 
     return ListenableBuilder(
       listenable: widget.prefs,
       builder: (context, _) {
         final groups = widget.prefs.progGroupOrder;
+        // Cross-group index for the focused muscle — same metric the radar uses,
+        // so the big INDEX number here matches what's shown on the hub vertex.
+        final focusStat = widget.history.groupStats(groups).firstWhere(
+              (s) => s.group == _focus,
+              orElse: () => GroupStat(
+                group: _focus,
+                label: _focus,
+                value: 0,
+                prev: 0,
+                delta: '+0',
+              ),
+            );
+        final delta = focusStat.value - focusStat.prev;
         return ListView(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 20),
       children: [
@@ -125,7 +140,7 @@ class _ProgressionScreenState extends State<ProgressionScreen> {
                           ),
                         ),
                         Text(
-                          '${data.last}',
+                          '${focusStat.value}',
                           style: mono(
                             size: 34,
                             weight: FontWeight.w800,

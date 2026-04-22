@@ -984,7 +984,8 @@ class _GroupPage extends StatelessWidget {
     final weeks = {'4W': 4, '12W': 12, '26W': 26, '52W': 52}[scale] ?? 12;
     final full = history.progressionFor(g.group);
     final data = full.sublist(full.length - weeks);
-    final delta = data.last - data.first;
+    // Cross-group delta so the badge matches the INDEX (both are radar metric).
+    final delta = g.value - g.prev;
     final improvements = history.mostImprovedInGroup(g.group);
 
     return Padding(
@@ -1012,7 +1013,7 @@ class _GroupPage extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         Text(
-                          '${data.last}',
+                          '${g.value}',
                           style: mono(
                             size: 38,
                             weight: FontWeight.w800,
@@ -1039,7 +1040,7 @@ class _GroupPage extends StatelessWidget {
                         border: Border.all(color: p.ink, width: 1.5),
                       ),
                       child: Text(
-                        '${delta >= 0 ? '+' : ''}$delta / $scale',
+                        '${delta >= 0 ? '+' : ''}$delta / 4W',
                         style: mono(size: 10, weight: FontWeight.w700, color: p.accentInk),
                       ),
                     ),
@@ -1055,7 +1056,7 @@ class _GroupPage extends StatelessWidget {
                     '${allStats.where((x) => x.value > g.value).length + 1}/${allStats.length}',
                   ),
                   const SizedBox(height: 4),
-                  _statBadge(context, 'MAX', '${full.reduce((a, b) => a > b ? a : b)}'),
+                  _statBadge(context, 'PREV', '${g.prev}'),
                 ],
               ),
             ],
