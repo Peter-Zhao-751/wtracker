@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import '../core/data.dart';
 import '../core/models.dart';
+import 'muscle_score.dart';
 import 'storage.dart';
 
 class History extends ChangeNotifier {
@@ -177,71 +178,35 @@ class History extends ChangeNotifier {
     return n;
   }
 
-  /// Per-group radar stats: current (last 4 weeks) vs previous (weeks 5-8),
-  /// each normalized to 0..100 relative to the max group volume in the
-  /// current window. Groups with no data show 0.
+  /// Per-group radar stats: strength-based score 0-100 for current 4 weeks,
+  /// and a comparable score for weeks 4-8 back (the "PREV" value feeding the
+  /// 4W delta badge). Delegates to `muscle_score.groupScore`.
   List<GroupStat> groupStats(List<String> groups) {
     final now = DateTime.now();
-    final thisWeek = _weekStart(now);
-    final cur = <String, double>{for (final g in groups) g: 0};
-    final prev = <String, double>{for (final g in groups) g: 0};
-    for (final s in _sessions) {
-      final w = _weekStart(s.date);
-      final wksBack = thisWeek.difference(w).inDays ~/ 7;
-      final bucket = wksBack < 4
-          ? cur
-          : (wksBack < 8 ? prev : null);
-      if (bucket == null) continue;
-      for (final l in s.sets) {
-        if (!bucket.containsKey(l.group)) continue;
-        bucket[l.group] = bucket[l.group]! + l.w * l.reps;
-      }
-    }
-    final maxVol = [...cur.values, ...prev.values].fold<double>(0, (a, b) => b > a ? b : a);
-    int norm(double v) => maxVol == 0 ? 0 : ((v / maxVol) * 100).round().clamp(0, 100);
+    final thisWeekStart = _weekStart(now);
+    final curEnd = thisWeekStart.add(const Duration(days: 7));
+    final prevEnd = curEnd.subtract(const Duration(days: 28));
     return [
       for (final g in groups)
-        GroupStat(
-          group: g,
-          label: groupLabel(g),
-          value: norm(cur[g] ?? 0),
-          prev: norm(prev[g] ?? 0),
-          delta: _deltaStr(norm(cur[g] ?? 0) - norm(prev[g] ?? 0)),
-        ),
+        () {
+          final cur = groupScore(_sessions, g, windowEnd: curEnd, windowWeeks: 4);
+          final prev = groupScore(_sessions, g, windowEnd: prevEnd, windowWeeks: 4);
+          return GroupStat(
+            group: g,
+            label: groupLabel(g),
+            value: cur,
+            prev: prev,
+            delta: _deltaStr(cur - prev),
+          );
+        }(),
     ];
   }
 
-  /// Index curve for [group]: weekly volume normalized 0..100 against the
-  /// group's peak week in the window, then 4-week trailing-averaged for
-  /// smoothness. Length is always [weeks]; empty history yields all zeros.
+  /// Weekly strength-score series for [group]. Each point is the group's
+  /// score using a 4-week trailing window ending at that week. Length is
+  /// always [weeks]; oldest first. The last point equals the current INDEX.
   List<int> progressionFor(String group, {int weeks = 52}) {
-    final raw = List<double>.filled(weeks, 0);
-    final now = DateTime.now();
-    final thisWeek = _weekStart(now);
-    for (final s in _sessions) {
-      final w = _weekStart(s.date);
-      final diff = thisWeek.difference(w).inDays ~/ 7;
-      final idx = weeks - 1 - diff;
-      if (idx < 0 || idx >= weeks) continue;
-      for (final l in s.sets) {
-        if (l.group == group) raw[idx] += l.w * l.reps;
-      }
-    }
-    final peak = raw.fold<double>(0, (a, b) => b > a ? b : a);
-    if (peak == 0) return List<int>.filled(weeks, 0);
-    final smooth = <int>[];
-    for (int i = 0; i < raw.length; i++) {
-      final from = (i - 3).clamp(0, raw.length - 1);
-      double s = 0;
-      int c = 0;
-      for (int j = from; j <= i; j++) {
-        s += raw[j];
-        c++;
-      }
-      final avg = s / c;
-      smooth.add(((avg / peak) * 100).round().clamp(0, 100));
-    }
-    return smooth;
+    return weeklyGroupScores(_sessions, group, weeks: weeks);
   }
 
   /// Number of weeks spanning the oldest logged session to the current week
