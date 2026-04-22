@@ -62,3 +62,20 @@ TextStyle mono({
     height: height,
   );
 }
+
+/// Swap the wordmark SVG's hardcoded ink (`#0a0a0a`) and paper (`#F3F0E8`)
+/// for the live palette colors. Accent fills in the SVG are left alone —
+/// each accent has its own wordmark file.
+String themedWordmark(String raw, BrutalPalette p) {
+  String hex(Color c) {
+    final r = (c.r * 255).round() & 0xff;
+    final g = (c.g * 255).round() & 0xff;
+    final b = (c.b * 255).round() & 0xff;
+    return '#${r.toRadixString(16).padLeft(2, '0')}'
+        '${g.toRadixString(16).padLeft(2, '0')}'
+        '${b.toRadixString(16).padLeft(2, '0')}';
+  }
+  return raw
+      .replaceAll(RegExp(r'#0a0a0a', caseSensitive: false), hex(p.ink))
+      .replaceAll(RegExp(r'#F3F0E8', caseSensitive: false), hex(p.paper));
+}

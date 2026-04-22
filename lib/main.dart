@@ -9,6 +9,7 @@ import 'services/state.dart';
 import 'services/storage.dart';
 import 'widgets/primitives.dart';
 import 'screens/dashboard.dart';
+import 'screens/launch.dart';
 import 'screens/templates.dart';
 import 'screens/progression.dart';
 import 'screens/log_sheet.dart';
@@ -18,48 +19,90 @@ import 'screens/active_workout.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   GoogleFonts.config.allowRuntimeFetching = true;
-  final tweaks = Tweaks();
-  final prefs = Prefs();
-  final history = History();
-  final wordmarks = <String, String>{};
-  await Future.wait([
-    tweaks.load(),
-    prefs.load(),
-    history.load(),
-    () async {
-      for (final a in kAccents) {
-        final name = a.name.toLowerCase();
-        wordmarks[name] =
-            await rootBundle.loadString('assets/wordmark-$name.svg');
-      }
-    }(),
-  ]);
-  final savedTab = await Storage.loadTab();
-  runApp(WTrackerApp(
-    tweaks: tweaks,
-    prefs: prefs,
-    history: history,
-    wordmarks: wordmarks,
-    initialTab: savedTab ?? 'dash',
-  ));
+  // Preload just the VOLT wordmark so the launch screen can paint it on
+  // its very first frame — no flash of empty background.
+  final voltSvg = await rootBundle.loadString('assets/wordmark-volt.svg');
+  runApp(BootApp(voltSvg: voltSvg));
 }
 
-/// Substitutes the wordmark SVG's hardcoded ink (`#0a0a0a`) and paper
-/// (`#F3F0E8`) with the live theme colors. The accent color inside the SVG
-/// is left alone — each accent has its own file.
-String _themedWordmark(String raw, BrutalPalette p) {
-  String hex(Color c) {
-    final r = (c.r * 255).round() & 0xff;
-    final g = (c.g * 255).round() & 0xff;
-    final b = (c.b * 255).round() & 0xff;
-    return '#${r.toRadixString(16).padLeft(2, '0')}'
-        '${g.toRadixString(16).padLeft(2, '0')}'
-        '${b.toRadixString(16).padLeft(2, '0')}';
+class BootApp extends StatefulWidget {
+  final String voltSvg;
+  const BootApp({super.key, required this.voltSvg});
+
+  @override
+  State<BootApp> createState() => _BootAppState();
+}
+
+class _BootAppState extends State<BootApp> {
+  Tweaks? _tweaks;
+  Prefs? _prefs;
+  History? _history;
+  Map<String, String>? _wordmarks;
+  String? _initialTab;
+
+  @override
+  void initState() {
+    super.initState();
+    _boot();
   }
 
-  return raw
-      .replaceAll(RegExp(r'#0a0a0a', caseSensitive: false), hex(p.ink))
-      .replaceAll(RegExp(r'#F3F0E8', caseSensitive: false), hex(p.paper));
+  Future<void> _boot() async {
+    final tweaks = Tweaks();
+    final prefs = Prefs();
+    final history = History();
+    final wordmarks = <String, String>{'volt': widget.voltSvg};
+    await Future.wait([
+      tweaks.load(),
+      prefs.load(),
+      history.load(),
+      () async {
+        for (final a in kAccents) {
+          final name = a.name.toLowerCase();
+          if (name == 'volt') continue;
+          wordmarks[name] =
+              await rootBundle.loadString('assets/wordmark-$name.svg');
+        }
+      }(),
+      // Keep the launch screen up for a beat even when loads finish fast,
+      // so the branding lands instead of flickering past.
+      Future.delayed(const Duration(milliseconds: 900)),
+    ]);
+    final savedTab = await Storage.loadTab();
+    if (!mounted) return;
+    setState(() {
+      _tweaks = tweaks;
+      _prefs = prefs;
+      _history = history;
+      _wordmarks = wordmarks;
+      _initialTab = savedTab ?? 'dash';
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_tweaks == null) {
+      return MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: AnnotatedRegion<SystemUiOverlayStyle>(
+          value: const SystemUiOverlayStyle(
+            statusBarColor: Colors.transparent,
+            statusBarIconBrightness: Brightness.light,
+            statusBarBrightness: Brightness.dark,
+            systemNavigationBarColor: LaunchScreen.bg,
+            systemNavigationBarIconBrightness: Brightness.light,
+          ),
+          child: LaunchScreen(wordmarkSvg: widget.voltSvg),
+        ),
+      );
+    }
+    return WTrackerApp(
+      tweaks: _tweaks!,
+      prefs: _prefs!,
+      history: _history!,
+      wordmarks: _wordmarks!,
+      initialTab: _initialTab!,
+    );
+  }
 }
 
 class WTrackerApp extends StatelessWidget {
@@ -289,7 +332,7 @@ class _AppShellState extends State<AppShell> {
                                   widget.tweaks.accent.name.toLowerCase()];
                               if (raw == null) return const SizedBox.shrink();
                               return SvgPicture.string(
-                                _themedWordmark(raw, BrutalColors.of(ctx)),
+                                themedWordmark(raw, BrutalColors.of(ctx)),
                                 height: 34,
                               );
                             })
