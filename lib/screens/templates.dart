@@ -624,7 +624,7 @@ class _FilterBarDraggable extends StatefulWidget {
 }
 
 class _FilterBarDraggableState extends State<_FilterBarDraggable>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   String? _dragOpt;
   String? _hoverOpt;
   final Map<String, GlobalKey> _keys = {};
@@ -636,6 +636,7 @@ class _FilterBarDraggableState extends State<_FilterBarDraggable>
   BrutalPalette? _palette;
 
   AnimationController? _dropCtrl;
+  AnimationController? _liftCtrl;
   Offset? _dropFrom;
   Offset? _dropTo;
   bool _accentOn = false;
@@ -650,6 +651,7 @@ class _FilterBarDraggableState extends State<_FilterBarDraggable>
     _overlay?.remove();
     _overlay = null;
     _dropCtrl?.dispose();
+    _liftCtrl?.dispose();
     super.dispose();
   }
 
@@ -674,12 +676,22 @@ class _FilterBarDraggableState extends State<_FilterBarDraggable>
       _accentOn = true;
     });
     _showOverlay();
+    final lift = _liftCtrl ??= AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 160),
+    )..addListener(_onLiftTick);
+    lift.forward(from: 0);
     HapticFeedback.selectionClick();
     return _FilterDrag(
       onUpdate: (d) => _onPointerMove(d.globalPosition),
       onEnd: (_) => _endDrag(commit: true),
       onCancel: () => _endDrag(commit: false),
     );
+  }
+
+  void _onLiftTick() {
+    setState(() {});
+    _overlay?.markNeedsBuild();
   }
 
   void _onPointerMove(Offset globalPos) {
@@ -761,6 +773,7 @@ class _FilterBarDraggableState extends State<_FilterBarDraggable>
     _overlay?.remove();
     _overlay = null;
     _dropCtrl?.value = 0;
+    _liftCtrl?.value = 0;
     setState(() {
       _dragOpt = null;
       _hoverOpt = null;
@@ -786,7 +799,12 @@ class _FilterBarDraggableState extends State<_FilterBarDraggable>
       return const SizedBox.shrink();
     }
     final dropT = _dropCtrl?.value ?? 0.0;
-    final k = 1.0 - dropT;
+    final liftT = _liftCtrl?.value ?? 0.0;
+    // k ramps 0→1 during the 160ms lift on pickup, holds at 1 during the
+    // drag, then unwinds back to 0 as dropT drives toward 1 on release.
+    // Matches the tab-picker's lift so the tilt/scale/halo eases in rather
+    // than snapping.
+    final k = (liftT - dropT).clamp(0.0, 1.0);
     return Positioned(
       left: top.dx,
       top: top.dy,
@@ -1001,10 +1019,15 @@ class _FilterCell extends StatelessWidget {
       child: RawGestureDetector(
         behavior: HitTestBehavior.opaque,
         gestures: {
-          ImmediateMultiDragGestureRecognizer:
+          // Delayed so a hold-to-pickup gesture fires only after the pointer
+          // stays within kTouchSlop for kLongPressTimeout (~500ms). That lets
+          // the lift chrome (tilt, shadow, accent halo) animate in while the
+          // user is still holding still — so you feel the pill get picked up
+          // before you start dragging it, matching the muscle-profile pills.
+          DelayedMultiDragGestureRecognizer:
               GestureRecognizerFactoryWithHandlers<
-                  ImmediateMultiDragGestureRecognizer>(
-            () => ImmediateMultiDragGestureRecognizer(),
+                  DelayedMultiDragGestureRecognizer>(
+            () => DelayedMultiDragGestureRecognizer(),
             (r) {
               r.onStart = onDragStart;
             },

@@ -5,9 +5,18 @@ class LaunchScreen extends StatelessWidget {
   final String wordmarkSvg;
   const LaunchScreen({super.key, required this.wordmarkSvg});
 
-  /// Matches the wordmark SVG's card fill (`#0a0a0a`) so the card blends
-  /// into the background and only the cream "w" + orange TRACKER read.
   static const Color bg = Color(0xFF0A0A0A);
+
+  /// Swap the raw SVG's card (`#0a0a0a`) and "w" (`#F3F0E8`) fills so the
+  /// card reads cream on the black launch background — must match the
+  /// native splash PNG/PDF.
+  static String _whiteVariant(String raw) {
+    const sentinel = '__LAUNCH_INK__';
+    return raw
+        .replaceAll('#0a0a0a', sentinel)
+        .replaceAll('#F3F0E8', '#0A0A0A')
+        .replaceAll(sentinel, '#F3F0E8');
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -23,7 +32,7 @@ class LaunchScreen extends StatelessWidget {
                 right: 0,
                 child: Center(
                   child: SvgPicture.string(
-                    wordmarkSvg,
+                    _whiteVariant(wordmarkSvg),
                     width: c.maxWidth * 0.7,
                   ),
                 ),

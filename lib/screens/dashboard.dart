@@ -212,7 +212,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   itemCount: pages.length,
                   onPageChanged: (i) => setState(() {
                     _page = i;
-                    _pageKey = pillKeys[i];
+                    // Recompute the key list from live state instead of using
+                    // the `pillKeys` captured above. When `_onReorderPills`
+                    // calls `jumpToPage`, this callback may fire with the
+                    // pre-reorder closure still in scope — using the stale
+                    // list would move the highlight to whatever tab slid into
+                    // the dragged tab's old slot instead of following the
+                    // dragged tab to its new position.
+                    final live = [
+                      'ALL',
+                      for (final g in widget.tweaks.radarGroups) g,
+                    ];
+                    if (i >= 0 && i < live.length) _pageKey = live[i];
                   }),
                   itemBuilder: (context, i) {
                     final page = pages[i];
@@ -355,7 +366,7 @@ class _PageBarDraggable extends StatefulWidget {
 }
 
 class _PageBarDraggableState extends State<_PageBarDraggable>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   String? _dragKey;
   String? _hoverKey;
   final Map<String, GlobalKey> _gKeys = {};
@@ -373,7 +384,16 @@ class _PageBarDraggableState extends State<_PageBarDraggable>
   AnimationController? _dropCtrl;
   Offset? _dropFrom;
   Offset? _dropTo;
+  // Pickup animation: ramps ghost chrome (tilt, scale, shadow, halo) from flat
+  // → lifted over ~160ms the moment the long-press fires. Before this existed
+  // the ghost popped in at full chrome instantly.
+  AnimationController? _liftCtrl;
   bool _accentOn = false;
+  // True between _endDrag and _cleanupGhost. While settling, non-source pills
+  // must snap to their post-reorder slots instantly — otherwise their 220ms
+  // slide leaves a non-active pill sitting in the source's old position,
+  // which reads as "the wrong page is highlighted" for the full settle window.
+  bool _isSettling = false;
 
   static const double _gap = 4;
   // Pill chrome (padding + border) around the text.
@@ -432,6 +452,7 @@ class _PageBarDraggableState extends State<_PageBarDraggable>
     _overlay?.remove();
     _overlay = null;
     _dropCtrl?.dispose();
+    _liftCtrl?.dispose();
     super.dispose();
   }
 
@@ -458,12 +479,22 @@ class _PageBarDraggableState extends State<_PageBarDraggable>
       _accentOn = true;
     });
     _showOverlay();
-    HapticFeedback.selectionClick();
+    final lift = _liftCtrl ??= AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 160),
+    )..addListener(_onLiftTick);
+    lift.forward(from: 0);
+    HapticFeedback.mediumImpact();
     return _PillDrag(
       onUpdate: (d) => _onPointerMove(d.globalPosition),
       onEnd: (_) => _endDrag(commit: true),
       onCancel: () => _endDrag(commit: false),
     );
+  }
+
+  void _onLiftTick() {
+    setState(() {});
+    _overlay?.markNeedsBuild();
   }
 
   void _onPointerMove(Offset globalPos) {
@@ -497,6 +528,7 @@ class _PageBarDraggableState extends State<_PageBarDraggable>
     setState(() {
       _hoverKey = null;
       _accentOn = false;
+      _isSettling = true;
     });
     if (shouldCommit) {
       widget.onReorder(from, to);
@@ -547,6 +579,7 @@ class _PageBarDraggableState extends State<_PageBarDraggable>
     _overlay?.remove();
     _overlay = null;
     _dropCtrl?.value = 0;
+    _liftCtrl?.value = 0;
     setState(() {
       _dragKey = null;
       _hoverKey = null;
@@ -555,6 +588,7 @@ class _PageBarDraggableState extends State<_PageBarDraggable>
       _dropFrom = null;
       _dropTo = null;
       _accentOn = false;
+      _isSettling = false;
     });
   }
 
@@ -572,7 +606,12 @@ class _PageBarDraggableState extends State<_PageBarDraggable>
       return const SizedBox.shrink();
     }
     final dropT = _dropCtrl?.value ?? 0.0;
-    final kk = 1.0 - dropT;
+    final liftT = _liftCtrl?.value ?? 0.0;
+    // kk is the "lifted-ness" of the ghost chrome: 0 = flat (in-slot),
+    // 1 = fully lifted. It ramps up at pickup (liftT 0→1), stays at 1 during
+    // drag, then ramps back down on release (dropT 0→1). The clamp protects
+    // the brief overlap if a second drag starts mid-drop.
+    final kk = (liftT - dropT).clamp(0.0, 1.0);
     return Positioned(
       left: top.dx,
       top: top.dy,
@@ -660,7 +699,7 @@ class _PageBarDraggableState extends State<_PageBarDraggable>
               for (final k in widget.keys)
                 AnimatedPositioned(
                   key: ValueKey('pos-$k'),
-                  duration: _dragKey == k
+                  duration: (_isSettling || _dragKey == k)
                       ? Duration.zero
                       : const Duration(milliseconds: 220),
                   curve: Curves.easeOutCubic,
@@ -777,10 +816,14 @@ class _PagePill extends StatelessWidget {
       child: RawGestureDetector(
         behavior: HitTestBehavior.opaque,
         gestures: {
-          ImmediateMultiDragGestureRecognizer:
+          // Delayed so a horizontal swipe still scrolls the strip: the
+          // recognizer only claims the arena after the pointer stays within
+          // kTouchSlop for kLongPressTimeout (~500ms). Fast moves bail out
+          // and the parent SingleChildScrollView wins.
+          DelayedMultiDragGestureRecognizer:
               GestureRecognizerFactoryWithHandlers<
-                  ImmediateMultiDragGestureRecognizer>(
-            () => ImmediateMultiDragGestureRecognizer(),
+                  DelayedMultiDragGestureRecognizer>(
+            () => DelayedMultiDragGestureRecognizer(),
             (r) {
               r.onStart = onDragStart;
             },

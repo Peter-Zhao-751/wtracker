@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../core/theme.dart';
 import 'primitives.dart';
 
@@ -132,6 +133,7 @@ class _DragListState<T> extends State<DragList<T>>
       const Duration(milliseconds: 16),
       (_) => _autoScrollTick(),
     );
+    HapticFeedback.mediumImpact();
 
     return _ReorderDrag(
       onUpdate: _onPointerMove,

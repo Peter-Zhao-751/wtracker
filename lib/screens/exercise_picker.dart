@@ -327,7 +327,7 @@ class _TabBarDraggable extends StatefulWidget {
 }
 
 class _TabBarDraggableState extends State<_TabBarDraggable>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   String? _dragTab;
   String? _hoverTab;
   final Map<String, GlobalKey> _keys = {};
@@ -349,7 +349,15 @@ class _TabBarDraggableState extends State<_TabBarDraggable>
   AnimationController? _dropCtrl;
   Offset? _dropFrom;
   Offset? _dropTo;
+  // Pickup: ramps ghost chrome from flat → lifted over ~160ms when the
+  // long-press fires. Previously the ghost popped in at full chrome instantly.
+  AnimationController? _liftCtrl;
   bool _accentOn = false;
+  // True between _endDrag and _cleanupGhost. While settling, non-source chips
+  // must snap to their post-reorder slots instantly — otherwise their 220ms
+  // slide leaves a non-active chip sitting in the source's old position,
+  // which reads as "the wrong tab is highlighted" for the full settle window.
+  bool _isSettling = false;
 
   static const double _gap = 4;
   // Chip chrome (Container padding + border) around the text.
@@ -401,6 +409,7 @@ class _TabBarDraggableState extends State<_TabBarDraggable>
     _overlay?.remove();
     _overlay = null;
     _dropCtrl?.dispose();
+    _liftCtrl?.dispose();
     super.dispose();
   }
 
@@ -426,12 +435,22 @@ class _TabBarDraggableState extends State<_TabBarDraggable>
       _accentOn = true;
     });
     _showOverlay();
-    HapticFeedback.selectionClick();
+    final lift = _liftCtrl ??= AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 160),
+    )..addListener(_onLiftTick);
+    lift.forward(from: 0);
+    HapticFeedback.mediumImpact();
     return _TabDrag(
       onUpdate: (d) => _onPointerMove(d.globalPosition),
       onEnd: (_) => _endDrag(commit: true),
       onCancel: () => _endDrag(commit: false),
     );
+  }
+
+  void _onLiftTick() {
+    setState(() {});
+    _overlay?.markNeedsBuild();
   }
 
   void _onPointerMove(Offset globalPos) {
@@ -464,6 +483,7 @@ class _TabBarDraggableState extends State<_TabBarDraggable>
     setState(() {
       _hoverTab = null;
       _accentOn = false;
+      _isSettling = true;
     });
     if (shouldCommit) {
       widget.onReorder(from, to);
@@ -514,6 +534,7 @@ class _TabBarDraggableState extends State<_TabBarDraggable>
     _overlay?.remove();
     _overlay = null;
     _dropCtrl?.value = 0;
+    _liftCtrl?.value = 0;
     setState(() {
       _dragTab = null;
       _hoverTab = null;
@@ -522,6 +543,7 @@ class _TabBarDraggableState extends State<_TabBarDraggable>
       _dropFrom = null;
       _dropTo = null;
       _accentOn = false;
+      _isSettling = false;
     });
   }
 
@@ -539,7 +561,12 @@ class _TabBarDraggableState extends State<_TabBarDraggable>
       return const SizedBox.shrink();
     }
     final dropT = _dropCtrl?.value ?? 0.0;
-    final k = 1.0 - dropT;
+    final liftT = _liftCtrl?.value ?? 0.0;
+    // k is the "lifted-ness" of the ghost chrome: 0 = flat (in-slot),
+    // 1 = fully lifted. Ramps up at pickup, stays at 1 during drag, ramps
+    // back down on release. Clamp protects the brief overlap if a second
+    // drag starts mid-drop.
+    final k = (liftT - dropT).clamp(0.0, 1.0);
     return Positioned(
       left: top.dx,
       top: top.dy,
@@ -630,7 +657,7 @@ class _TabBarDraggableState extends State<_TabBarDraggable>
               for (final g in widget.tabs)
                 AnimatedPositioned(
                   key: ValueKey('pos-$g'),
-                  duration: _dragTab == g
+                  duration: (_isSettling || _dragTab == g)
                       ? Duration.zero
                       : const Duration(milliseconds: 220),
                   curve: Curves.easeOutCubic,
@@ -753,10 +780,14 @@ class _TabChip extends StatelessWidget {
       child: RawGestureDetector(
         behavior: HitTestBehavior.opaque,
         gestures: {
-          ImmediateMultiDragGestureRecognizer:
+          // Delayed so horizontal swipes still scroll the strip: the
+          // recognizer only claims the arena after the pointer stays within
+          // kTouchSlop for kLongPressTimeout (~500ms). Fast swipes bail out
+          // and the parent horizontal SingleChildScrollView wins.
+          DelayedMultiDragGestureRecognizer:
               GestureRecognizerFactoryWithHandlers<
-                  ImmediateMultiDragGestureRecognizer>(
-            () => ImmediateMultiDragGestureRecognizer(),
+                  DelayedMultiDragGestureRecognizer>(
+            () => DelayedMultiDragGestureRecognizer(),
             (r) {
               r.onStart = onDragStart;
             },
