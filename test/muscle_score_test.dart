@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wtracker/core/strength_standards.dart';
+import 'package:wtracker/services/muscle_score.dart';
 
 void main() {
   group('deriveAnchors', () {
@@ -58,6 +59,33 @@ void main() {
 
     test('returns null for unknown exercise', () {
       expect(kLiftStandards['MADE UP LIFT'], isNull);
+    });
+  });
+
+  group('estimate1RM', () {
+    test('Epley formula for 225x5', () {
+      expect(estimate1RM(225, 5), closeTo(225 * (1 + 5 / 30), 0.001));
+    });
+
+    test('155x7 produces ~191', () {
+      expect(estimate1RM(155, 7), closeTo(191.17, 0.01));
+    });
+
+    test('single rep equals the weight * (1 + 1/30)', () {
+      expect(estimate1RM(300, 1), closeTo(300 * (1 + 1 / 30), 0.001));
+    });
+
+    test('clamps reps at 12 so 135x20 does not inflate', () {
+      // 135 * (1 + 12/30) = 189, NOT 135 * (1 + 20/30) = 225
+      expect(estimate1RM(135, 20), closeTo(189, 0.01));
+    });
+
+    test('zero weight returns 0', () {
+      expect(estimate1RM(0, 5), 0);
+    });
+
+    test('zero reps returns 0', () {
+      expect(estimate1RM(225, 0), 0);
     });
   });
 }
