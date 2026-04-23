@@ -7,9 +7,11 @@ import '../services/history.dart';
 import '../services/state.dart';
 import '../widgets/primitives.dart';
 import '../widgets/radar_chart.dart';
+import '../widgets/section_column.dart';
 
 class DashboardScreen extends StatefulWidget {
   final Tweaks tweaks;
+  final Prefs prefs;
   final History history;
   final void Function(Template) onStart;
   final ValueChanged<String> onTab;
@@ -17,6 +19,7 @@ class DashboardScreen extends StatefulWidget {
   const DashboardScreen({
     super.key,
     required this.tweaks,
+    required this.prefs,
     required this.history,
     required this.onStart,
     required this.onTab,
@@ -37,6 +40,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void initState() {
     super.initState();
     widget.tweaks.addListener(_morphReset);
+    widget.prefs.addListener(_onPrefs);
     widget.history.addListener(_onHistory);
   }
 
@@ -51,9 +55,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (mounted) setState(() {});
   }
 
+  void _onPrefs() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
     widget.tweaks.removeListener(_morphReset);
+    widget.prefs.removeListener(_onPrefs);
     widget.history.removeListener(_onHistory);
     _pageController.dispose();
     super.dispose();
@@ -68,6 +77,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
     const m = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
                'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
     return m[DateTime.now().month - 1];
+  }
+
+  void _onReorderHubStats(String fromKey, String toKey) {
+    final order = List<String>.from(widget.prefs.hubStatOrder);
+    final from = order.indexOf(fromKey);
+    final to = order.indexOf(toKey);
+    if (from < 0 || to < 0 || from == to) return;
+    order.removeAt(from);
+    order.insert(to, fromKey);
+    widget.prefs.setHubStatOrder(order);
+  }
+
+  void _onReorderHubSections(List<String> newOrder) {
+    widget.prefs.setHubSectionOrder(newOrder);
   }
 
   /// Move [fromKey] into [toKey]'s slot in the tracked-group order, then
@@ -147,185 +170,194 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     final volUnit = _volUnit();
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 20),
-      children: [
-        Row(
+    final tileByKey = <String, StatTile>{
+      'STREAK': StatTile(
+        label: 'STREAK',
+        value: '$streak',
+        unit: streak > 1 ? 'DAYS' : 'DAY',
+        delta: prevStreak > 0 ? 'BEST ${prevStreak}D' : '—',
+        deltaColor: p.ink.withValues(alpha: 0.6),
+      ),
+      'WK_VOL': StatTile(
+        label: 'WK VOL',
+        value: _volConv(thisWeek),
+        unit: volUnit,
+        delta: weekDeltaStr,
+      ),
+      'PRS': StatTile(
+        label: 'PRs',
+        value: '$prsThisMonth',
+        unit: _monthAbbrev(),
+        delta: prsThisMonth > 0 ? '↑ NEW' : '—',
+      ),
+    };
+    final hubTiles = [
+      for (final k in widget.prefs.hubStatOrder)
+        if (tileByKey[k] != null) _HubStatSpec(key: k, tile: tileByKey[k]!),
+    ];
+
+    final sectionByKey = <String, Widget>{
+      'RADAR': BrutalBox(
+        tag: pages[_page]['type'] == 'radar'
+            ? 'MUSCLE PROFILE'
+            : 'DETAIL · ${(pages[_page]['g'] as GroupStat).group}',
+        child: Column(
           children: [
-            Expanded(
-              child: StatTile(
-                label: 'STREAK',
-                value: '$streak',
-                unit: streak > 1 ? 'DAYS' : 'DAY',
-                delta: prevStreak > 0 ? 'BEST ${prevStreak}D' : '—',
-                deltaColor: p.ink.withValues(alpha: 0.6),
+            const SizedBox(height: 22),
+            _PageBarDraggable(
+              keys: pillKeys,
+              labels: pillLabels,
+              activeKey: _pageKey,
+              lockedKeys: const {'ALL'},
+              onSelect: (k) {
+                final i = pillKeys.indexOf(k);
+                if (i < 0) return;
+                _pageController.animateToPage(
+                  i,
+                  duration: const Duration(milliseconds: 250),
+                  curve: Curves.easeOut,
+                );
+              },
+              onReorder: _onReorderPills,
+            ),
+            SizedBox(
+              height: 400,
+              child: PageView.builder(
+                controller: _pageController,
+                itemCount: pages.length,
+                onPageChanged: (i) => setState(() {
+                  _page = i;
+                  // Recompute the key list from live state instead of using
+                  // the `pillKeys` captured above. When `_onReorderPills`
+                  // calls `jumpToPage`, this callback may fire with the
+                  // pre-reorder closure still in scope — using the stale
+                  // list would move the highlight to whatever tab slid into
+                  // the dragged tab's old slot instead of following the
+                  // dragged tab to its new position.
+                  final live = [
+                    'ALL',
+                    for (final g in widget.tweaks.radarGroups) g,
+                  ];
+                  if (i >= 0 && i < live.length) _pageKey = live[i];
+                }),
+                itemBuilder: (context, i) {
+                  final page = pages[i];
+                  if (page['type'] == 'radar') {
+                    return _RadarPage(
+                      data: activeRadar,
+                      styleMode: widget.tweaks.radarStyle,
+                      animate: _morph,
+                    );
+                  }
+                  return _GroupPage(
+                    g: page['g'] as GroupStat,
+                    history: widget.history,
+                    allStats: activeRadar,
+                    scale: _groupScale,
+                    onScale: (s) => setState(() => _groupScale = s),
+                    unit: widget.tweaks.unit,
+                    conv: _conv,
+                  );
+                },
               ),
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: StatTile(
-                label: 'WK VOL',
-                value: _volConv(thisWeek),
-                unit: volUnit,
-                delta: weekDeltaStr,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: StatTile(
-                label: 'PRs',
-                value: '$prsThisMonth',
-                unit: _monthAbbrev(),
-                delta: prsThisMonth > 0 ? '↑ NEW' : '—',
+            DashedLine(color: p.ink),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(0, 6, 0, 10),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  for (int i = 0; i < pages.length; i++) ...[
+                    if (i > 0) const SizedBox(width: 5),
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      width: _page == i ? 14 : 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: _page == i ? p.ink : Colors.transparent,
+                        border: Border.all(color: p.ink, width: 1.5),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
           ],
         ),
-        const SizedBox(height: 12),
-        BrutalBox(
-          tag: pages[_page]['type'] == 'radar'
-              ? 'MUSCLE PROFILE'
-              : 'DETAIL · ${(pages[_page]['g'] as GroupStat).group}',
-          child: Column(
-            children: [
-              const SizedBox(height: 22),
-              _PageBarDraggable(
-                keys: pillKeys,
-                labels: pillLabels,
-                activeKey: _pageKey,
-                lockedKeys: const {'ALL'},
-                onSelect: (k) {
-                  final i = pillKeys.indexOf(k);
-                  if (i < 0) return;
-                  _pageController.animateToPage(
-                    i,
-                    duration: const Duration(milliseconds: 250),
-                    curve: Curves.easeOut,
-                  );
-                },
-                onReorder: _onReorderPills,
-              ),
-              SizedBox(
-                height: 400,
-                child: PageView.builder(
-                  controller: _pageController,
-                  itemCount: pages.length,
-                  onPageChanged: (i) => setState(() {
-                    _page = i;
-                    // Recompute the key list from live state instead of using
-                    // the `pillKeys` captured above. When `_onReorderPills`
-                    // calls `jumpToPage`, this callback may fire with the
-                    // pre-reorder closure still in scope — using the stale
-                    // list would move the highlight to whatever tab slid into
-                    // the dragged tab's old slot instead of following the
-                    // dragged tab to its new position.
-                    final live = [
-                      'ALL',
-                      for (final g in widget.tweaks.radarGroups) g,
-                    ];
-                    if (i >= 0 && i < live.length) _pageKey = live[i];
-                  }),
-                  itemBuilder: (context, i) {
-                    final page = pages[i];
-                    if (page['type'] == 'radar') {
-                      return _RadarPage(
-                        data: activeRadar,
-                        styleMode: widget.tweaks.radarStyle,
-                        animate: _morph,
-                      );
-                    }
-                    return _GroupPage(
-                      g: page['g'] as GroupStat,
-                      history: widget.history,
-                      allStats: activeRadar,
-                      scale: _groupScale,
-                      onScale: (s) => setState(() => _groupScale = s),
-                      unit: widget.tweaks.unit,
-                      conv: _conv,
-                    );
-                  },
+      ),
+      'VOLUME': BrutalBox(
+        tag: 'WK VOLUME · 12W',
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'TOTAL ${_volConv(totalVol)}${volUnit.toUpperCase()}',
+                  style: mono(size: 11, weight: FontWeight.w700, color: p.ink),
                 ),
-              ),
-              DashedLine(color: p.ink),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(0, 6, 0, 10),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                Text(
+                  '▲ $trendStr',
+                  style: mono(size: 11, weight: FontWeight.w700, color: p.accentOnPaper),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 74,
+              child: _VolumeBars(data: volume),
+            ),
+            const SizedBox(height: 4),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('W−11', style: mono(size: 9, color: p.ink.withValues(alpha: 0.5))),
+                Text('W0', style: mono(size: 9, color: p.ink.withValues(alpha: 0.5))),
+              ],
+            ),
+          ],
+        ),
+      ),
+      'PRS': BrutalBox(
+        tag: 'RECENT PRs',
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(10, 22, 10, 10),
+          child: prs.isEmpty
+              ? _EmptyHint(text: 'FINISH A WORKOUT TO LOG PRs')
+              : Column(
                   children: [
-                    for (int i = 0; i < pages.length; i++) ...[
-                      if (i > 0) const SizedBox(width: 5),
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 150),
-                        width: _page == i ? 14 : 6,
-                        height: 6,
-                        decoration: BoxDecoration(
-                          color: _page == i ? p.ink : Colors.transparent,
-                          border: Border.all(color: p.ink, width: 1.5),
-                        ),
+                    for (int i = 0; i < prs.length; i++)
+                      _PrRowWidget(
+                        pr: prs[i],
+                        first: i == 0,
+                        unit: widget.tweaks.unit,
+                        conv: _conv,
                       ),
-                    ],
                   ],
                 ),
-              ),
-            ],
-          ),
+        ),
+      ),
+    };
+    final hubSections = [
+      for (final k in widget.prefs.hubSectionOrder)
+        if (sectionByKey[k] != null) SectionItem(key: k, child: sectionByKey[k]!),
+    ];
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 20),
+      children: [
+        _HubStatsRow(
+          tiles: hubTiles,
+          onReorder: _onReorderHubStats,
         ),
         const SizedBox(height: 12),
-        BrutalBox(
-          tag: 'WK VOLUME · 12W',
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 10),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'TOTAL ${_volConv(totalVol)}${volUnit.toUpperCase()}',
-                    style: mono(size: 11, weight: FontWeight.w700, color: p.ink),
-                  ),
-                  Text(
-                    '▲ $trendStr',
-                    style: mono(size: 11, weight: FontWeight.w700, color: p.accentOnPaper),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              SizedBox(
-                height: 74,
-                child: _VolumeBars(data: volume),
-              ),
-              const SizedBox(height: 4),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('W−11', style: mono(size: 9, color: p.ink.withValues(alpha: 0.5))),
-                  Text('W0', style: mono(size: 9, color: p.ink.withValues(alpha: 0.5))),
-                ],
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        BrutalBox(
-          tag: 'RECENT PRs',
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(10, 22, 10, 10),
-            child: prs.isEmpty
-                ? _EmptyHint(text: 'FINISH A WORKOUT TO LOG PRs')
-                : Column(
-                    children: [
-                      for (int i = 0; i < prs.length; i++)
-                        _PrRowWidget(
-                          pr: prs[i],
-                          first: i == 0,
-                          unit: widget.tweaks.unit,
-                          conv: _conv,
-                        ),
-                    ],
-                  ),
-          ),
+        SectionColumn(
+          sections: hubSections,
+          onReorder: _onReorderHubSections,
+          gap: 12,
         ),
         const SizedBox(height: 12),
         BrutalButton(
@@ -1728,3 +1760,395 @@ class _EmptyHint extends StatelessWidget {
     );
   }
 }
+
+class _HubStatSpec {
+  final String key;
+  final StatTile tile;
+  const _HubStatSpec({required this.key, required this.tile});
+}
+
+/// Horizontal row of equal-width stat tiles that can be reordered via
+/// long-press + drag. Uses the same lift-ghost/drop-settle chrome as
+/// [_PageBarDraggable] but with fixed-width slots and a fixed gap.
+class _HubStatsRow extends StatefulWidget {
+  final List<_HubStatSpec> tiles;
+  final void Function(String fromKey, String toKey) onReorder;
+  const _HubStatsRow({required this.tiles, required this.onReorder});
+
+  @override
+  State<_HubStatsRow> createState() => _HubStatsRowState();
+}
+
+class _HubStatsRowState extends State<_HubStatsRow>
+    with TickerProviderStateMixin {
+  String? _dragKey;
+  String? _hoverKey;
+  final Map<String, GlobalKey> _gKeys = {};
+
+  Offset? _ghostTopLeft;
+  Size? _ghostSize;
+  Offset _pointerLocal = Offset.zero;
+  OverlayEntry? _overlay;
+  BrutalPalette? _palette;
+
+  AnimationController? _dropCtrl;
+  Offset? _dropFrom;
+  Offset? _dropTo;
+  AnimationController? _liftCtrl;
+  bool _accentOn = false;
+  // While settling, non-source tiles must snap to their post-reorder slots
+  // instantly; otherwise the 220ms slide leaves a non-active tile in the
+  // source's old position during the settle window.
+  bool _isSettling = false;
+
+  static const double _gap = 8;
+
+  GlobalKey _keyFor(String k) => _gKeys.putIfAbsent(k, () => GlobalKey());
+
+  @override
+  void dispose() {
+    _overlay?.remove();
+    _overlay = null;
+    _dropCtrl?.dispose();
+    _liftCtrl?.dispose();
+    super.dispose();
+  }
+
+  Drag? _onDragStart(String k, Offset globalPos) {
+    if (_dropCtrl?.isAnimating ?? false) {
+      _dropCtrl!.stop();
+      _cleanupGhost();
+    }
+    final ctx = _keyFor(k).currentContext;
+    if (ctx == null) return null;
+    final rb = ctx.findRenderObject();
+    if (rb is! RenderBox || !rb.attached) return null;
+    final topLeft = rb.localToGlobal(Offset.zero);
+    final size = rb.size;
+
+    _palette = BrutalColors.of(context);
+    setState(() {
+      _dragKey = k;
+      _hoverKey = k;
+      _ghostTopLeft = topLeft;
+      _ghostSize = size;
+      _pointerLocal = globalPos - topLeft;
+      _accentOn = true;
+    });
+    _showOverlay();
+    final lift = _liftCtrl ??= AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 160),
+    )..addListener(_onLiftTick);
+    lift.forward(from: 0);
+    HapticFeedback.mediumImpact();
+    return _PillDrag(
+      onUpdate: (d) => _onPointerMove(d.globalPosition),
+      onEnd: (_) => _endDrag(commit: true),
+      onCancel: () => _endDrag(commit: false),
+    );
+  }
+
+  void _onLiftTick() {
+    setState(() {});
+    _overlay?.markNeedsBuild();
+  }
+
+  void _onPointerMove(Offset globalPos) {
+    _ghostTopLeft = globalPos - _pointerLocal;
+    String? nextHover;
+    for (final s in widget.tiles) {
+      final k = s.key;
+      if (k == _dragKey) continue;
+      final ctx = _gKeys[k]?.currentContext;
+      if (ctx == null) continue;
+      final rb = ctx.findRenderObject();
+      if (rb is! RenderBox || !rb.attached) continue;
+      final pos = rb.localToGlobal(Offset.zero);
+      final rect = pos & rb.size;
+      if (rect.contains(globalPos)) {
+        nextHover = k;
+        break;
+      }
+    }
+    if (nextHover != null && nextHover != _hoverKey) {
+      setState(() => _hoverKey = nextHover);
+    }
+    _overlay?.markNeedsBuild();
+  }
+
+  void _endDrag({required bool commit}) {
+    final from = _dragKey;
+    final to = _hoverKey;
+    final shouldCommit =
+        commit && from != null && to != null && from != to;
+    setState(() {
+      _hoverKey = null;
+      _accentOn = false;
+      _isSettling = true;
+    });
+    if (shouldCommit) {
+      widget.onReorder(from, to);
+    }
+    _startDropSettle();
+  }
+
+  void _startDropSettle() {
+    final from = _dragKey;
+    if (from == null) {
+      _cleanupGhost();
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final ctx = _gKeys[from]?.currentContext;
+      final rb = ctx?.findRenderObject();
+      if (rb is! RenderBox || !rb.attached) {
+        _cleanupGhost();
+        return;
+      }
+      _dropFrom = _ghostTopLeft;
+      _dropTo = rb.localToGlobal(Offset.zero);
+      final ctrl = _dropCtrl ??= AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 200),
+      )..addListener(_onDropTick);
+      ctrl.forward(from: 0).whenComplete(() {
+        if (!mounted) return;
+        _cleanupGhost();
+      });
+    });
+  }
+
+  void _onDropTick() {
+    final ctrl = _dropCtrl;
+    final from = _dropFrom;
+    final to = _dropTo;
+    if (ctrl == null || from == null || to == null) return;
+    final t = Curves.easeOutCubic.transform(ctrl.value);
+    setState(() {
+      _ghostTopLeft = Offset.lerp(from, to, t);
+    });
+    _overlay?.markNeedsBuild();
+  }
+
+  void _cleanupGhost() {
+    _overlay?.remove();
+    _overlay = null;
+    _dropCtrl?.value = 0;
+    _liftCtrl?.value = 0;
+    setState(() {
+      _dragKey = null;
+      _hoverKey = null;
+      _ghostTopLeft = null;
+      _ghostSize = null;
+      _dropFrom = null;
+      _dropTo = null;
+      _accentOn = false;
+      _isSettling = false;
+    });
+  }
+
+  void _showOverlay() {
+    _overlay = OverlayEntry(builder: _buildGhost);
+    Overlay.of(context, rootOverlay: true).insert(_overlay!);
+  }
+
+  Widget _buildGhost(BuildContext _) {
+    final top = _ghostTopLeft;
+    final size = _ghostSize;
+    final palette = _palette;
+    final k = _dragKey;
+    if (top == null || size == null || palette == null || k == null) {
+      return const SizedBox.shrink();
+    }
+    final spec = widget.tiles.firstWhere(
+      (s) => s.key == k,
+      orElse: () => widget.tiles.first,
+    );
+    final dropT = _dropCtrl?.value ?? 0.0;
+    final liftT = _liftCtrl?.value ?? 0.0;
+    // kk: 0 = flat in-slot, 1 = fully lifted. Ramps up at pickup, stays at 1
+    // during drag, ramps back to 0 on release.
+    final kk = (liftT - dropT).clamp(0.0, 1.0);
+    return Positioned(
+      left: top.dx,
+      top: top.dy,
+      width: size.width,
+      height: size.height,
+      child: IgnorePointer(
+        child: Transform.rotate(
+          angle: -0.026 * kk,
+          alignment: Alignment.center,
+          child: Transform.scale(
+            scale: 1.0 + 0.02 * kk,
+            alignment: Alignment.center,
+            child: Opacity(
+              opacity: 0.95 + 0.05 * dropT,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: palette.paper,
+                  boxShadow: [
+                    BoxShadow(
+                      color: palette.ink,
+                      offset: Offset(6 * kk, 6 * kk),
+                    ),
+                    BoxShadow(
+                      color: palette.accent,
+                      spreadRadius: 3 * kk,
+                    ),
+                  ],
+                ),
+                child: BrutalColors(
+                  palette: palette,
+                  child: Material(
+                    type: MaterialType.transparency,
+                    child: spec.tile,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Tile order for *display* — if a drag is in progress, the source slots
+  /// where the hover indicates so the remaining tiles appear to make room.
+  List<_HubStatSpec> _displayedTiles() {
+    if (_dragKey == null || _hoverKey == null || _dragKey == _hoverKey) {
+      return widget.tiles;
+    }
+    final list = List<_HubStatSpec>.from(widget.tiles);
+    final from = list.indexWhere((s) => s.key == _dragKey);
+    final to = list.indexWhere((s) => s.key == _hoverKey);
+    if (from < 0 || to < 0) return widget.tiles;
+    final moved = list.removeAt(from);
+    list.insert(to, moved);
+    return list;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final displayed = _displayedTiles();
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final count = widget.tiles.length;
+        if (count == 0) return const SizedBox.shrink();
+        final tileW = (constraints.maxWidth - _gap * (count - 1)) / count;
+        final xByKey = <String, double>{
+          for (int i = 0; i < displayed.length; i++)
+            displayed[i].key: i * (tileW + _gap),
+        };
+        return IntrinsicHeight(
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              // Invisible sizer row establishes the Stack's intrinsic height
+              // so Positioned children can use top:0 / bottom:0.
+              Row(
+                children: [
+                  for (int i = 0; i < count; i++) ...[
+                    if (i > 0) const SizedBox(width: _gap),
+                    SizedBox(
+                      width: tileW,
+                      child: Opacity(
+                        opacity: 0,
+                        child: widget.tiles[i].tile,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              for (final s in widget.tiles)
+                AnimatedPositioned(
+                  key: ValueKey('hubstat-pos-${s.key}'),
+                  duration: (_isSettling || _dragKey == s.key)
+                      ? Duration.zero
+                      : const Duration(milliseconds: 220),
+                  curve: Curves.easeOutCubic,
+                  left: xByKey[s.key] ?? 0,
+                  top: 0,
+                  bottom: 0,
+                  width: tileW,
+                  child: KeyedSubtree(
+                    key: _keyFor(s.key),
+                    child: _HubStatTile(
+                      spec: s,
+                      dragging: _dragKey == s.key,
+                      showAccent: _dragKey == s.key && _accentOn,
+                      onDragStart: (pos) => _onDragStart(s.key, pos),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _HubStatTile extends StatelessWidget {
+  final _HubStatSpec spec;
+  final bool dragging;
+  final bool showAccent;
+  final Drag? Function(Offset globalPosition) onDragStart;
+  const _HubStatTile({
+    required this.spec,
+    required this.dragging,
+    required this.showAccent,
+    required this.onDragStart,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = BrutalColors.of(context);
+    final visual = Stack(
+      children: [
+        Visibility(
+          visible: !dragging,
+          maintainState: true,
+          maintainAnimation: true,
+          maintainSize: true,
+          child: spec.tile,
+        ),
+        Positioned.fill(
+          child: IgnorePointer(
+            child: AnimatedOpacity(
+              duration: const Duration(milliseconds: 140),
+              curve: Curves.easeOut,
+              opacity: showAccent ? 1 : 0,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: palette.accent,
+                  border: Border.all(color: palette.ink, width: 2),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+    return RawGestureDetector(
+      behavior: HitTestBehavior.opaque,
+      gestures: {
+        // Long-press to pick up — matches the pill bar and the hub section
+        // column. Short taps and vertical scrolls fall through because the
+        // recognizer only claims the arena after ~500ms of no motion.
+        DelayedMultiDragGestureRecognizer:
+            GestureRecognizerFactoryWithHandlers<
+                DelayedMultiDragGestureRecognizer>(
+          () => DelayedMultiDragGestureRecognizer(),
+          (r) {
+            r.onStart = onDragStart;
+          },
+        ),
+      },
+      child: visual,
+    );
+  }
+}
+
+

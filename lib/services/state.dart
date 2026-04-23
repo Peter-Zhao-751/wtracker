@@ -128,6 +128,25 @@ class Prefs extends ChangeNotifier {
     'CUSTOM',
   ];
 
+  static const List<String> kDefaultHubStatOrder = [
+    'STREAK',
+    'WK_VOL',
+    'PRS',
+  ];
+
+  static const List<String> kDefaultHubSectionOrder = [
+    'RADAR',
+    'VOLUME',
+    'PRS',
+  ];
+
+  static const List<String> kDefaultProgSectionOrder = [
+    'FOCUS',
+    'DETAIL',
+    'GROUPS',
+    'SESSIONS',
+  ];
+
   List<String> _templateOrder = [];
   final Map<String, TplOverride> _templateOverrides = {};
   final Set<String> _exerciseFavorites = {};
@@ -135,12 +154,18 @@ class Prefs extends ChangeNotifier {
   List<String> _tabOrder = [];
   List<String> _tplFilterOrder = List<String>.from(kDefaultTplFilterOrder);
   List<String> _progGroupOrder = List<String>.from(kGroupNames);
+  List<String> _hubStatOrder = List<String>.from(kDefaultHubStatOrder);
+  List<String> _hubSectionOrder = List<String>.from(kDefaultHubSectionOrder);
+  List<String> _progSectionOrder = List<String>.from(kDefaultProgSectionOrder);
 
   List<String> get templateOrder => List.unmodifiable(_templateOrder);
   Set<String> get exerciseFavorites => Set.unmodifiable(_exerciseFavorites);
   List<String> get tabOrder => List.unmodifiable(_tabOrder);
   List<String> get tplFilterOrder => List.unmodifiable(_tplFilterOrder);
   List<String> get progGroupOrder => List.unmodifiable(_progGroupOrder);
+  List<String> get hubStatOrder => List.unmodifiable(_hubStatOrder);
+  List<String> get hubSectionOrder => List.unmodifiable(_hubSectionOrder);
+  List<String> get progSectionOrder => List.unmodifiable(_progSectionOrder);
 
   bool isFavorite(String name) => _exerciseFavorites.contains(name);
   List<String>? exerciseOrderFor(String group) => _exerciseOrder[group];
@@ -184,6 +209,33 @@ class Prefs extends ChangeNotifier {
       final loaded = (saved['progGroupOrder'] as List).cast().map((e) => e.toString());
       _progGroupOrder = _reconcileGroupOrder(loaded);
     }
+    if (saved['hubStatOrder'] is List) {
+      final loaded = List<String>.from(
+        (saved['hubStatOrder'] as List).map((e) => e.toString()),
+      );
+      _hubStatOrder = <String>[
+        ...loaded.where(kDefaultHubStatOrder.contains),
+        ...kDefaultHubStatOrder.where((o) => !loaded.contains(o)),
+      ];
+    }
+    if (saved['hubSectionOrder'] is List) {
+      final loaded = List<String>.from(
+        (saved['hubSectionOrder'] as List).map((e) => e.toString()),
+      );
+      _hubSectionOrder = <String>[
+        ...loaded.where(kDefaultHubSectionOrder.contains),
+        ...kDefaultHubSectionOrder.where((o) => !loaded.contains(o)),
+      ];
+    }
+    if (saved['progSectionOrder'] is List) {
+      final loaded = List<String>.from(
+        (saved['progSectionOrder'] as List).map((e) => e.toString()),
+      );
+      _progSectionOrder = <String>[
+        ...loaded.where(kDefaultProgSectionOrder.contains),
+        ...kDefaultProgSectionOrder.where((o) => !loaded.contains(o)),
+      ];
+    }
     notifyListeners();
   }
 
@@ -198,6 +250,9 @@ class Prefs extends ChangeNotifier {
       'tabOrder': _tabOrder,
       'tplFilterOrder': _tplFilterOrder,
       'progGroupOrder': _progGroupOrder,
+      'hubStatOrder': _hubStatOrder,
+      'hubSectionOrder': _hubSectionOrder,
+      'progSectionOrder': _progSectionOrder,
     });
   }
 
@@ -263,6 +318,36 @@ class Prefs extends ChangeNotifier {
 
   void setProgGroupOrder(List<String> order) {
     _progGroupOrder = _reconcileGroupOrder(order);
+    notifyListeners();
+    _persist();
+  }
+
+  void setHubStatOrder(List<String> order) {
+    final next = <String>[
+      ...order.where(kDefaultHubStatOrder.contains),
+      ...kDefaultHubStatOrder.where((o) => !order.contains(o)),
+    ];
+    _hubStatOrder = next;
+    notifyListeners();
+    _persist();
+  }
+
+  void setHubSectionOrder(List<String> order) {
+    final next = <String>[
+      ...order.where(kDefaultHubSectionOrder.contains),
+      ...kDefaultHubSectionOrder.where((o) => !order.contains(o)),
+    ];
+    _hubSectionOrder = next;
+    notifyListeners();
+    _persist();
+  }
+
+  void setProgSectionOrder(List<String> order) {
+    final next = <String>[
+      ...order.where(kDefaultProgSectionOrder.contains),
+      ...kDefaultProgSectionOrder.where((o) => !order.contains(o)),
+    ];
+    _progSectionOrder = next;
     notifyListeners();
     _persist();
   }

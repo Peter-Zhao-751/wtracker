@@ -416,6 +416,7 @@ class _AppShellState extends State<AppShell> {
       default:
         return DashboardScreen(
           tweaks: widget.tweaks,
+          prefs: widget.prefs,
           history: widget.history,
           onStart: _start,
           onTab: _setTab,

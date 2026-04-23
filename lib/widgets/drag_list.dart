@@ -55,19 +55,13 @@ class DragList<T> extends StatefulWidget {
 }
 
 class _DragListState<T> extends State<DragList<T>>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   String? _dragId;
   int? _insertIdx;
   Offset? _ghostTopLeft;
   Size? _ghostSize;
   Offset _pointerLocal = Offset.zero;
   Offset _pointer = Offset.zero;
-  // Separate from `_dragId`: the accent indicator fades out at *drop start*
-  // (not at cleanup), so by the time the drop-settle finishes and the real
-  // card becomes visible, the accent has already faded to 0. Otherwise the
-  // AnimatedOpacity would start a visible 140ms fade right as the card
-  // re-appears — that's the "flash" the user sees on release.
-  bool _accentOn = false;
 
   final Map<String, GlobalKey> _cardKeys = {};
   final GlobalKey _listKey = GlobalKey();
@@ -82,6 +76,13 @@ class _DragListState<T> extends State<DragList<T>>
   AnimationController? _dropCtrl;
   Offset? _dropFrom;
   Offset? _dropTo;
+  // Pickup ramp: fades in chrome (tilt, shadow, accent halo, slot accent)
+  // over ~160ms from 0 → 1 so pickup reads as a smooth lift. Drives the
+  // source-slot accent via `kk = liftT - dropT`, so the highlight fades in
+  // with the ghost on pickup and fades out with it on release — no
+  // standalone 140ms AnimatedOpacity that flashes when cleanup reveals the
+  // card before it completes.
+  AnimationController? _liftCtrl;
 
   ScrollController get _scroll =>
       widget.scrollController ?? (_ownedScroll ??= ScrollController());
@@ -93,6 +94,7 @@ class _DragListState<T> extends State<DragList<T>>
     _autoScrollTimer?.cancel();
     _ownedScroll?.dispose();
     _dropCtrl?.dispose();
+    _liftCtrl?.dispose();
     super.dispose();
   }
 
@@ -126,9 +128,13 @@ class _DragListState<T> extends State<DragList<T>>
       _ghostSize = size;
       _pointerLocal = globalPosition - topLeft;
       _pointer = globalPosition;
-      _accentOn = true;
     });
     _showOverlay();
+    final lift = _liftCtrl ??= AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 160),
+    )..addListener(_onLiftTick);
+    lift.forward(from: 0);
     _autoScrollTimer ??= Timer.periodic(
       const Duration(milliseconds: 16),
       (_) => _autoScrollTick(),
@@ -169,28 +175,20 @@ class _DragListState<T> extends State<DragList<T>>
         insertIdx != fromIdx &&
         insertIdx != fromIdx + 1;
 
-    if (!shouldMove) {
-      // Fade accent first so the snap-back doesn't flash. The ghost overlay
-      // is removed inside `_cleanupGhost` so we don't need drop-settle here.
-      setState(() => _accentOn = false);
-      _cleanupGhost();
-      return;
+    // Clear the preview. The source keeps `_dragId` set (and stays hidden)
+    // while the ghost tweens into its final slot. The accent overlay at the
+    // source's slot fades in lockstep with the ghost halo via `kk`, so when
+    // cleanup reveals the card the highlight is already at 0 — no flash.
+    setState(() => _insertIdx = null);
+    if (shouldMove) {
+      widget.onReorder(fromIdx, insertIdx);
     }
 
-    // Clear the preview and commit the reorder. The source keeps `_dragId`
-    // set (and thus stays hidden) while the ghost tweens into the card's
-    // final resting slot — the rebuild from onReorder puts the source at
-    // its new position in `widget.items`, and its GlobalKey resolves to
-    // that new slot on the next frame.
-    setState(() {
-      _insertIdx = null;
-      // Start the accent fade NOW (during the 180ms drop-settle) so by the
-      // time the ghost lands and cleanup exposes the real card, the accent
-      // has already faded to 0.
-      _accentOn = false;
-    });
-    widget.onReorder(fromIdx, insertIdx);
-
+    // Always run the drop-settle, even for no-move releases. Otherwise
+    // cleanup would snap the card visible with the accent still at full
+    // opacity, causing the highlight flash the user sees. The settle tweens
+    // the ghost back into the source's (possibly new) slot and unwinds the
+    // lift chrome — including the slot accent.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final ctx = _cardKeys[fromId]?.currentContext;
@@ -212,6 +210,11 @@ class _DragListState<T> extends State<DragList<T>>
     });
   }
 
+  void _onLiftTick() {
+    setState(() {});
+    _overlay?.markNeedsBuild();
+  }
+
   void _onDropTick() {
     final ctrl = _dropCtrl;
     final from = _dropFrom;
@@ -227,11 +230,12 @@ class _DragListState<T> extends State<DragList<T>>
   void _cleanupGhost() {
     _overlay?.remove();
     _overlay = null;
-    // Reset the drop-settle controller so the next pickup starts with
-    // dropT=0 (→ k=1) and renders the full lift chrome (tilt, shadow,
-    // accent halo). Without this it stays pinned at 1.0 after a commit
-    // and the second+ pickup looks flat.
+    // Reset both controllers so the next pickup starts from a clean slate:
+    // liftT=0 ramps back up and dropT=0 keeps chrome at full strength during
+    // the drag. Without this they stay pinned at 1.0 after a commit and the
+    // second+ pickup looks flat.
     _dropCtrl?.value = 0;
+    _liftCtrl?.value = 0;
     setState(() {
       _dragId = null;
       _insertIdx = null;
@@ -239,7 +243,6 @@ class _DragListState<T> extends State<DragList<T>>
       _ghostSize = null;
       _dropFrom = null;
       _dropTo = null;
-      _accentOn = false;
     });
   }
 
@@ -336,22 +339,24 @@ class _DragListState<T> extends State<DragList<T>>
         widget.items.indexWhere((t) => widget.getId(t) == _dragId);
     if (idx < 0) return const SizedBox.shrink();
     final item = widget.items[idx];
-    // Interpolate ghost chrome back toward the card's natural appearance
-    // during the drop-settle: rotation → 0, scale → 1, offset-shadow → 0,
-    // accent halo → 0, so by the time the ghost reaches the slot it reads as
-    // the real card rather than suddenly popping out of its dragged state.
+    // `kk` is the lifted-ness of the ghost chrome: 0 = flat, 1 = fully
+    // lifted. Ramps up on pickup (liftT 0→1), stays at 1 during drag, then
+    // unwinds on release (dropT 0→1). The slot-accent overlay on the card
+    // uses the same `kk` so the highlight fades out in lockstep with the
+    // ghost halo — they vanish together right as cleanup exposes the card.
+    final liftT = _liftCtrl?.value ?? 0.0;
     final dropT = _dropCtrl?.value ?? 0.0;
-    final k = 1.0 - dropT;
+    final kk = (liftT - dropT).clamp(0.0, 1.0);
     return Positioned(
       left: top.dx,
       top: top.dy,
       width: size.width,
       child: IgnorePointer(
         child: Transform.rotate(
-          angle: -0.026 * k,
+          angle: -0.026 * kk,
           alignment: Alignment.center,
           child: Transform.scale(
-            scale: 1.0 + 0.02 * k,
+            scale: 1.0 + 0.02 * kk,
             alignment: Alignment.center,
             child: Opacity(
               opacity: 0.95 + 0.05 * dropT,
@@ -361,11 +366,11 @@ class _DragListState<T> extends State<DragList<T>>
                   boxShadow: [
                     BoxShadow(
                       color: palette.ink,
-                      offset: Offset(6 * k, 6 * k),
+                      offset: Offset(6 * kk, 6 * kk),
                     ),
                     BoxShadow(
                       color: palette.accent,
-                      spreadRadius: 3 * k,
+                      spreadRadius: 3 * kk,
                     ),
                   ],
                 ),
@@ -432,6 +437,13 @@ class _DragListState<T> extends State<DragList<T>>
   Widget build(BuildContext context) {
     final p = BrutalColors.of(context);
     final displayed = _displayOrder();
+    final liftT = _liftCtrl?.value ?? 0.0;
+    final dropT = _dropCtrl?.value ?? 0.0;
+    // Matches the ghost's lifted-ness: fades in with the pickup ramp and
+    // fades out with the drop-settle so the slot highlight and the ghost
+    // halo move as one piece. When cleanup sets `_dragId = null`, kk is
+    // already 0 so revealing the card is seamless.
+    final kk = (liftT - dropT).clamp(0.0, 1.0);
     final children = <Widget>[];
     for (int k = 0; k < displayed.length; k++) {
       if (k > 0 && widget.closedGap > 0) {
@@ -440,10 +452,7 @@ class _DragListState<T> extends State<DragList<T>>
       final (origIdx, item) = displayed[k];
       final id = widget.getId(item);
       final isDragging = id == _dragId;
-      // The accent indicator follows `_accentOn` (not `isDragging`) so it
-      // can fade out at drop START — which finishes before the real card
-      // reappears at cleanup, preventing the post-landing flash.
-      final showAccent = isDragging && _accentOn;
+      final accentOpacity = isDragging ? kk : 0.0;
       children.add(KeyedSubtree(
         key: _keyFor(id),
         child: Stack(
@@ -463,21 +472,20 @@ class _DragListState<T> extends State<DragList<T>>
                 ),
               ),
             ),
-            Positioned.fill(
-              child: IgnorePointer(
-                child: AnimatedOpacity(
-                  duration: const Duration(milliseconds: 140),
-                  curve: Curves.easeOut,
-                  opacity: showAccent ? 1 : 0,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: p.accent,
-                      border: Border.all(color: p.ink, width: 2),
+            if (accentOpacity > 0)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: Opacity(
+                    opacity: accentOpacity,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: p.accent,
+                        border: Border.all(color: p.ink, width: 2),
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
           ],
         ),
       ));

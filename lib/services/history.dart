@@ -35,20 +35,25 @@ class History extends ChangeNotifier {
     return w > max && w > 0;
   }
 
-  /// Heaviest weight logged for [exerciseName] in the most recent session
-  /// that included it — used to seed "the weight you did last time" as the
-  /// default when starting a new session. Picks the max within that session
-  /// since a ramp-to-top workout's top set reads as the working weight.
-  /// Returns null if the lift has never been logged.
-  double? lastWeightFor(String exerciseName) {
+  /// Weight + reps from the heaviest set of the most recent session that
+  /// included [exerciseName] — used to seed "what you did last time" as the
+  /// default when starting a new session. Weight and reps come from the same
+  /// set so the pair stays coherent (e.g., 225×5 rather than 225 paired with
+  /// whatever rep count showed up last). Returns null if the lift has never
+  /// been logged.
+  ({double w, int reps})? lastSetFor(String exerciseName) {
     for (int i = _sessions.length - 1; i >= 0; i--) {
-      double? best;
+      double? bestW;
+      int bestReps = 0;
       for (final s in _sessions[i].sets) {
         if (s.exerciseName == exerciseName) {
-          if (best == null || s.w > best) best = s.w;
+          if (bestW == null || s.w > bestW) {
+            bestW = s.w;
+            bestReps = s.reps;
+          }
         }
       }
-      if (best != null) return best;
+      if (bestW != null) return (w: bestW, reps: bestReps);
     }
     return null;
   }

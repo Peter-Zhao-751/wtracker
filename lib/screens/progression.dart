@@ -6,6 +6,7 @@ import '../services/state.dart';
 import '../widgets/drag_list.dart';
 import '../widgets/group_grid.dart';
 import '../widgets/primitives.dart';
+import '../widgets/section_column.dart';
 
 class ProgressionScreen extends StatefulWidget {
   final Tweaks tweaks;
@@ -99,39 +100,61 @@ class _ProgressionScreenState extends State<ProgressionScreen> {
               ),
             );
         final delta = focusStat.value - focusStat.prev;
-        return ListView(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 20),
-      children: [
-        BrutalBox(
-          tag: 'FOCUS GROUP',
-          padding: const EdgeInsets.fromLTRB(10, 22, 10, 10),
-          child: ReorderableGroupGrid(
-            items: groups,
-            childAspectRatio: 3.4,
-            cellBuilder: (context, g) => _GroupBtn(
-              label: g,
-              active: _focus == g,
+        final sectionByKey = <String, Widget>{
+          'FOCUS': BrutalBox(
+            tag: 'FOCUS GROUP',
+            padding: const EdgeInsets.fromLTRB(10, 22, 10, 10),
+            child: ReorderableGroupGrid(
+              items: groups,
+              childAspectRatio: 3.4,
+              cellBuilder: (context, g) => _GroupBtn(
+                label: g,
+                active: _focus == g,
+              ),
+              onTap: (g) => setState(() => _focus = g),
+              onReorder: (next) => widget.prefs.setProgGroupOrder(next),
             ),
-            onTap: (g) => setState(() => _focus = g),
-            onReorder: (next) => widget.prefs.setProgGroupOrder(next),
           ),
-        ),
-        const SizedBox(height: 12),
-        BrutalBox(
-          tag: '$_focus · $scaleTag',
-          padding: const EdgeInsets.fromLTRB(12, 22, 12, 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+          'DETAIL': BrutalBox(
+            tag: '$_focus · $scaleTag',
+            padding: const EdgeInsets.fromLTRB(12, 22, 12, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'CURRENT INDEX',
+                            style: mono(
+                              size: 9,
+                              weight: FontWeight.w700,
+                              letterSpacing: 1,
+                              color: p.ink.withValues(alpha: 0.6),
+                            ),
+                          ),
+                          Text(
+                            '${focusStat.value}',
+                            style: mono(
+                              size: 34,
+                              weight: FontWeight.w800,
+                              letterSpacing: -1,
+                              color: p.ink,
+                              height: 1,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         Text(
-                          'CURRENT INDEX',
+                          deltaTag,
                           style: mono(
                             size: 9,
                             weight: FontWeight.w700,
@@ -139,157 +162,145 @@ class _ProgressionScreenState extends State<ProgressionScreen> {
                             color: p.ink.withValues(alpha: 0.6),
                           ),
                         ),
-                        Text(
-                          '${focusStat.value}',
-                          style: mono(
-                            size: 34,
-                            weight: FontWeight.w800,
-                            letterSpacing: -1,
-                            color: p.ink,
-                            height: 1,
+                        const SizedBox(height: 4),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: p.accent,
+                            border: Border.all(color: p.ink, width: 2),
+                          ),
+                          child: Text(
+                            '${delta >= 0 ? '+' : ''}$delta',
+                            style: mono(
+                              size: 16,
+                              weight: FontWeight.w800,
+                              color: p.accentInk,
+                            ),
                           ),
                         ),
                       ],
                     ),
-                  ),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text(
-                        deltaTag,
-                        style: mono(
-                          size: 9,
-                          weight: FontWeight.w700,
-                          letterSpacing: 1,
-                          color: p.ink.withValues(alpha: 0.6),
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: p.accent,
-                          border: Border.all(color: p.ink, width: 2),
-                        ),
-                        child: Text(
-                          '${delta >= 0 ? '+' : ''}$delta',
-                          style: mono(
-                            size: 16,
-                            weight: FontWeight.w800,
-                            color: p.accentInk,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Segmented(
-                opts: _scaleOpts,
-                value: _scale,
-                onChange: (s) => setState(() => _scale = s),
-                height: 28,
-                fontSize: 10,
-              ),
-              const SizedBox(height: 10),
-              SizedBox(
-                height: 140,
-                child: CustomPaint(
-                  painter: _ProgLinePainter(
-                    data: data,
-                    ink: p.ink,
-                    paper: p.paper,
-                    accent: p.accent,
-                    scaleLabel: scaleTag,
-                    weeks: weeks,
-                  ),
-                  size: const Size(double.infinity, 140),
+                  ],
                 ),
-              ),
-              const SizedBox(height: 14),
-              Text(
-                'EXERCISE LOADS · $scaleTag',
-                style: mono(
-                  size: 9,
-                  weight: FontWeight.w700,
-                  letterSpacing: 1,
-                  color: p.ink.withValues(alpha: 0.6),
+                const SizedBox(height: 10),
+                Segmented(
+                  opts: _scaleOpts,
+                  value: _scale,
+                  onChange: (s) => setState(() => _scale = s),
+                  height: 28,
+                  fontSize: 10,
                 ),
-              ),
-              const SizedBox(height: 6),
-              _ExerciseProgList(
-                items: exSeries,
-                unit: widget.tweaks.unit,
-                conv: _wConv,
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        BrutalBox(
-          tag: 'ALL GROUPS',
-          padding: EdgeInsets.zero,
-          child: Padding(
-            padding: const EdgeInsets.only(top: 22),
-            child: DragList<String>(
-              scrollable: false,
-              closedGap: 0,
-              items: groups,
-              getId: (g) => g,
-              onReorder: (fromIdx, insertIdx) {
-                final newIdx = insertIdx > fromIdx ? insertIdx - 1 : insertIdx;
-                final list = List<String>.from(groups);
-                final moved = list.removeAt(fromIdx);
-                list.insert(newIdx, moved);
-                widget.prefs.setProgGroupOrder(list);
-              },
-              itemBuilder: (context, i, g, handle) => _GroupRow(
-                group: g,
-                data: widget.history.progressionFor(g),
-                focus: _focus == g,
-                handle: handle,
-                onTap: () => setState(() => _focus = g),
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        BrutalBox(
-          tag: 'RECENT SESSIONS',
-          padding: EdgeInsets.zero,
-          child: Padding(
-            padding: const EdgeInsets.only(top: 22),
-            child: Column(
-              children: [
-                if (sessions.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 22),
-                    child: Center(
-                      child: Text(
-                        'NO SESSIONS LOGGED YET',
-                        style: mono(
-                          size: 10,
-                          weight: FontWeight.w700,
-                          letterSpacing: 1.5,
-                          color: p.ink.withValues(alpha: 0.5),
-                        ),
-                      ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  height: 140,
+                  child: CustomPaint(
+                    painter: _ProgLinePainter(
+                      data: data,
+                      ink: p.ink,
+                      paper: p.paper,
+                      accent: p.accent,
+                      scaleLabel: scaleTag,
+                      weeks: weeks,
                     ),
-                  )
-                else
-                  for (int i = 0; i < sessions.length; i++)
-                    _SessionRow(
-                      row: sessions[i],
-                      first: i == 0,
-                      volUnit: _volUnit(),
-                      volConv: _volConv,
-                    ),
+                    size: const Size(double.infinity, 140),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  'EXERCISE LOADS · $scaleTag',
+                  style: mono(
+                    size: 9,
+                    weight: FontWeight.w700,
+                    letterSpacing: 1,
+                    color: p.ink.withValues(alpha: 0.6),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                _ExerciseProgList(
+                  items: exSeries,
+                  unit: widget.tweaks.unit,
+                  conv: _wConv,
+                ),
               ],
             ),
           ),
-        ),
-      ],
+          'GROUPS': BrutalBox(
+            tag: 'ALL GROUPS',
+            padding: EdgeInsets.zero,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 22),
+              child: DragList<String>(
+                scrollable: false,
+                closedGap: 0,
+                items: groups,
+                getId: (g) => g,
+                onReorder: (fromIdx, insertIdx) {
+                  final newIdx = insertIdx > fromIdx ? insertIdx - 1 : insertIdx;
+                  final list = List<String>.from(groups);
+                  final moved = list.removeAt(fromIdx);
+                  list.insert(newIdx, moved);
+                  widget.prefs.setProgGroupOrder(list);
+                },
+                itemBuilder: (context, i, g, handle) => _GroupRow(
+                  group: g,
+                  data: widget.history.progressionFor(g),
+                  focus: _focus == g,
+                  handle: handle,
+                  onTap: () => setState(() => _focus = g),
+                ),
+              ),
+            ),
+          ),
+          'SESSIONS': BrutalBox(
+            tag: 'RECENT SESSIONS',
+            padding: EdgeInsets.zero,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 22),
+              child: Column(
+                children: [
+                  if (sessions.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 22),
+                      child: Center(
+                        child: Text(
+                          'NO SESSIONS LOGGED YET',
+                          style: mono(
+                            size: 10,
+                            weight: FontWeight.w700,
+                            letterSpacing: 1.5,
+                            color: p.ink.withValues(alpha: 0.5),
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    for (int i = 0; i < sessions.length; i++)
+                      _SessionRow(
+                        row: sessions[i],
+                        first: i == 0,
+                        volUnit: _volUnit(),
+                        volConv: _volConv,
+                      ),
+                ],
+              ),
+            ),
+          ),
+        };
+        final progSections = [
+          for (final k in widget.prefs.progSectionOrder)
+            if (sectionByKey[k] != null)
+              SectionItem(key: k, child: sectionByKey[k]!),
+        ];
+        return ListView(
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 20),
+          children: [
+            SectionColumn(
+              sections: progSections,
+              onReorder: (newOrder) =>
+                  widget.prefs.setProgSectionOrder(newOrder),
+              gap: 12,
+            ),
+          ],
         );
       },
     );

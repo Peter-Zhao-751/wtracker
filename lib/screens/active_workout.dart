@@ -77,13 +77,14 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
   void initState() {
     super.initState();
     _exs = widget.template.exercises.map((ex) {
-      final repNum = int.tryParse(ex.reps.split('-').last.replaceAll(RegExp(r'[^0-9]'), '')) ?? 5;
+      final tplReps = int.tryParse(ex.reps.split('-').last.replaceAll(RegExp(r'[^0-9]'), '')) ?? 5;
       // Predefined templates carry generic hardcoded weights — if the user
-      // has logged this lift before, seed with their last working weight.
+      // has logged this lift before, seed with their last working set.
       // LOG templates arrive from the log-sheet planner, which already did
       // the history prefill and may contain manual overrides — trust those.
-      final lastW = _isLog ? null : widget.history.lastWeightFor(ex.name);
-      final w = lastW ?? _conv(ex.w);
+      final last = _isLog ? null : widget.history.lastSetFor(ex.name);
+      final w = last?.w ?? _conv(ex.w);
+      final repNum = last?.reps ?? tplReps;
       return LiveExercise(
         name: ex.name,
         group: ex.group,
@@ -224,10 +225,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
 
   void _addExercise(Map<String, dynamic> p) {
     final reps = (p['reps'] as String?) ?? '8';
-    final repNum = int.tryParse(reps.split('-').last.replaceAll(RegExp(r'[^0-9]'), '')) ?? 8;
+    final tplReps = int.tryParse(reps.split('-').last.replaceAll(RegExp(r'[^0-9]'), '')) ?? 8;
     final name = p['name'] as String;
-    final lastW = widget.history.lastWeightFor(name);
-    final w = lastW ?? _conv((p['w'] as num?)?.toDouble() ?? 0);
+    final last = widget.history.lastSetFor(name);
+    final w = last?.w ?? _conv((p['w'] as num?)?.toDouble() ?? 0);
+    final repNum = last?.reps ?? tplReps;
     setState(() {
       _exs.add(LiveExercise(
         name: name,
